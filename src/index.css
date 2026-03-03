@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #9d2bee;
+  --color-background-light: #f7f6f8;
+  --color-background-dark: #1a1022;
+  --font-display: "Spline Sans", sans-serif;
+  --radius: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    font-family: "Spline Sans", sans-serif;
+  }
+  .sidebar-item-active {
+    background-color: rgba(157, 43, 238, 0.1);
+    color: #9d2bee;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+}
