@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #9d2bee;
   --color-background-light: #f7f6f8;
@@ -20,5 +22,33 @@
   }
   .material-symbols-outlined {
     font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+  .prop-label {
+    display: block;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgb(148 163 184);
+    margin-bottom: 0.25rem;
+  }
+
+  /* Dark mode overrides for main layout surfaces */
+  .dark aside {
+    background-color: #0f0f1a !important;
+    border-color: rgba(157, 43, 238, 0.15) !important;
+    color: #e2e8f0;
+  }
+  .dark header {
+    background-color: rgba(15, 15, 26, 0.95) !important;
+    border-color: rgba(157, 43, 238, 0.1) !important;
+  }
+  .dark .sidebar-item-active {
+    background-color: rgba(157, 43, 238, 0.2) !important;
+    color: #c084fc !important;
+  }
+  .dark aside p,
+  .dark aside span:not(.material-symbols-outlined) {
+    color: inherit;
   }
 }

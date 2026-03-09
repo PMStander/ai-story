@@ -1,0 +1,19 @@
+{
+  "name": "ai-publisher-functions",
+  "description": "Cloud Functions for AI Publisher",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.3.0",
+    "@google/generative-ai": "^0.24.0"
+  },
+  "devDependencies": {},
+  "private": true
+}

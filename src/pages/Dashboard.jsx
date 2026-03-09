@@ -1,154 +1,306 @@
-export default function Dashboard() {
-  const projects = [
-    {
-      id: 1,
-      genre: "Non-Fiction",
-      title: "Potty Training Guide",
-      status: "Draft",
-      progress: 60,
-      lastEdit: "2h ago",
-      image:
-        "https://lh3.googleusercontent.com/aida-public/AB6AXuAdkvGqiO9eT2nIePXbnM0jAYhb6SDJ1fTr7C6NKj7IAMKb7_NAcKVcodZ6rXTs1NFpxMDW_g15-mMJYrXQh7jSCAadzsK0u9oYLGHmLA-f1HPnbj-sjBVaYCttv_fBjqxPGpnlpyXD7WUKgEquJvQYrpe8uTRqyKG5AW9RhVr84tHYpBaVss7hhlgIP4kkTcK8zouiTk0S6lz4cOFIElcXGT88dl4kdpWhpgqJHCEUdLffwU7FkHK0bvxJHk1c0KuXVj2jhhjWsgg",
-    },
-    {
-      id: 2,
-      genre: "Children's Fiction",
-      title: "Bedtime Stories for Toddlers",
-      status: "Generating",
-      progress: 85,
-      lastEdit: "1d ago",
-      image:
-        "https://lh3.googleusercontent.com/aida-public/AB6AXuD5puxHcnLojW5z5HkXzBSEMr8TRVbpwWIY7bezKfKcQrPrHrXug9CtKyApzxLMHztOJn2WEeZfT2uLcRhCB-PNKdHttvN4d8C2GkAP3WLcEveXTUR2y-PE2EvOXU4soXt5XCbrtKKwMSi8oT8cjjtjWpjhptjr00BdnmLkXLqf0glEYBJerCZJlkN80F4aDRkJ0cFBdKr700X17kWb3_aQuDR_8vAyFci_glPLrZrv1HkV_cfRA1bGwZE_E2d3rlWyEJUgf-9iahw",
-    },
-    {
-      id: 3,
-      genre: "Cooking",
-      title: "Healthy Recipes for Busy Parents",
-      status: "Researching",
-      progress: 12,
-      lastEdit: "Created: 3d ago",
-      image:
-        "https://lh3.googleusercontent.com/aida-public/AB6AXuC-mCJPnzz5-r3NyjWThi_-m6OvV1WK-yMD_dWhmR57Mi9vqcMf6beHeu0TUoC7PHskTo-kYpqC4yG8ToYBy0WFseB-YT21URQybvv4D6aB7ovDbUMp5L7UTpgiHQl52WwVBopemPY0tsZ861aRJ6fbbaDi4iHGKyXKUnJVqpF-9cdb1ig11j0LAPYnkrKw4gTLn81Vo0E0U90YWJvyDQfWl0JfCNQS-QzKPDUEJFMFBuZLchyjLPwCE2vIwdJk_R-Fxhh3BvdT6no",
-    },
-  ];
+import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { useGemini } from "../contexts/GeminiContext";
+import { onProjectsSnapshot, createProject, deleteProject } from "../lib/firestore";
+import { useNavigate } from "react-router-dom";
+import { KDP_TRIM_SIZES, BOOK_TYPES } from "../lib/kdpFormats";
 
-  const stats = [
-    { label: "Total Books", value: "12" },
-    { label: "Published (KDP)", value: "8" },
-    { label: "Monthly Royalties", value: "$2,440" },
-    { label: "AI Tokens Used", value: "45%" },
-  ];
+export default function Dashboard() {
+  const { user } = useAuth();
+  const { hasApiKey } = useGemini();
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newGenre, setNewGenre] = useState("Children's Fiction");
+  const [newBookType, setNewBookType] = useState("picture-book");
+  const [newTrimSize, setNewTrimSize] = useState("8.5x8.5");
+  const [newTargetAge, setNewTargetAge] = useState("3-6");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onProjectsSnapshot(user.uid, (data) => {
+      setProjects(data);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, [user]);
+
+  const handleCreateProject = async () => {
+    if (!newTitle.trim()) return;
+    setCreating(true);
+    const selectedType = BOOK_TYPES[newBookType];
+    const id = await createProject(user.uid, {
+      title: newTitle.trim(),
+      genre: newGenre,
+      targetAge: newTargetAge,
+      bookType: newBookType,
+      trimSize: newTrimSize,
+      interiorType: selectedType?.interiorType || "premium-color",
+      pageCount: selectedType?.recommendedPages?.[Math.floor(selectedType.recommendedPages.length / 2)] || 32,
+    });
+    setCreating(false);
+    setShowNewProject(false);
+    setNewTitle("");
+    navigate(`/story-outline?project=${id}`);
+  };
+
+  const handleDeleteProject = async (projectId) => {
+    if (confirm("Delete this project? This cannot be undone.")) {
+      await deleteProject(user.uid, projectId);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      draft: "bg-slate-100 text-slate-600",
+      outline: "bg-blue-100 text-blue-700",
+      writing: "bg-amber-100 text-amber-700",
+      illustrating: "bg-purple-100 text-purple-700",
+      review: "bg-cyan-100 text-cyan-700",
+      published: "bg-green-100 text-green-700",
+    };
+    return colors[status] || colors.draft;
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return "";
+    const d = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString();
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
+      {/* API Key Warning */}
+      {!hasApiKey && (
+        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6">
+          <span className="material-symbols-outlined text-amber-500">warning</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Gemini API key not configured</p>
+            <p className="text-xs text-amber-600">AI features (writing, illustrations, research) need your API key to work.</p>
+          </div>
+          <button onClick={() => navigate("/settings")} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600">
+            Set Up
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-3xl font-black tracking-tight">Active Projects</h2>
           <p className="text-slate-500 mt-1">
-            You have {projects.length} books currently in development.
+            {projects.length === 0 ? "Start your first book project." : `You have ${projects.length} book${projects.length !== 1 ? "s" : ""} in development.`}
           </p>
         </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-white border border-primary/20 rounded-xl hover:border-primary transition-all shadow-sm">
-          <span className="material-symbols-outlined text-primary">
-            add_circle
-          </span>
-          <span className="text-sm font-bold text-primary">
-            Create New Project
-          </span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate("/book-wizard")}
+            className="flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-primary/20 hover:bg-primary/90"
+          >
+            <span className="material-symbols-outlined">auto_awesome</span>
+            ✨ AI Create Book
+          </button>
+          <button
+            onClick={() => setShowNewProject(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-primary/20 text-primary rounded-xl hover:bg-primary/5 font-bold text-sm transition-all"
+          >
+            <span className="material-symbols-outlined">add_circle</span>
+            Manual Project
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            className="bg-white rounded-xl border border-primary/10 p-5 shadow-sm hover:shadow-md transition-all group"
-          >
-            <div className="flex gap-5">
-              <div className="w-32 h-44 rounded-lg bg-primary/10 overflow-hidden flex-shrink-0 relative border border-primary/5">
-                <div
-                  className="absolute inset-0 bg-cover bg-center group-hover:scale-105 transition-transform duration-500"
-                  style={{ backgroundImage: `url('${project.image}')` }}
+      {/* New Project Modal */}
+      {showNewProject && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-black mb-6 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">auto_stories</span>
+              New Book Project
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Book Title</label>
+                <input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  placeholder="e.g., Timmy's Potty Adventure"
+                  autoFocus
                 />
-                <div className="absolute top-2 left-2 bg-white/90 backdrop-blur px-2 py-0.5 rounded text-[10px] font-bold text-primary uppercase">
-                  {project.status}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Genre</label>
+                <select
+                  value={newGenre}
+                  onChange={(e) => setNewGenre(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                >
+                  {["Children's Fiction", "Educational", "Bedtime Stories", "Activity Book", "Non-Fiction", "Potty Training", "Social Skills", "Feelings & Emotions"].map((g) => (
+                    <option key={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Book Type */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Book Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(BOOK_TYPES).slice(0, 4).map(([id, type]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setNewBookType(id);
+                        setNewTrimSize(type.recommendedSizes[0]);
+                      }}
+                      className={`p-2.5 rounded-xl border-2 text-left transition-all ${
+                        newBookType === id ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className={`material-symbols-outlined text-sm ${newBookType === id ? "text-primary" : "text-slate-400"}`}>{type.icon}</span>
+                        <span className="text-xs font-bold">{type.label}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex flex-col flex-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">
-                      {project.genre}
-                    </p>
-                    <h3 className="text-xl font-bold leading-tight group-hover:text-primary transition-colors">
-                      {project.title}
-                    </h3>
-                  </div>
-                  <button className="text-slate-400 hover:text-primary transition-colors">
-                    <span className="material-symbols-outlined">more_vert</span>
-                  </button>
+
+              {/* Trim Size & Age */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">KDP Trim Size</label>
+                  <select
+                    value={newTrimSize}
+                    onChange={(e) => setNewTrimSize(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  >
+                    {(BOOK_TYPES[newBookType]?.recommendedSizes || Object.keys(KDP_TRIM_SIZES)).map((sizeId) => {
+                      const size = KDP_TRIM_SIZES[sizeId];
+                      return size ? <option key={sizeId} value={sizeId}>{size.label}</option> : null;
+                    })}
+                  </select>
                 </div>
-                <div className="mt-auto">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-500 font-medium">
-                      {project.progress}% Complete
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      {project.lastEdit}
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-primary/10 rounded-full mb-6">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{ width: `${project.progress}%` }}
-                    />
-                  </div>
-                  <div className="flex gap-3">
-                    <button className="flex-1 bg-primary text-white text-sm font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors">
-                      <span className="material-symbols-outlined text-lg">
-                        edit_square
-                      </span>
-                      Open Studio
-                    </button>
-                    <button className="px-3 bg-primary/5 text-primary hover:bg-primary/10 rounded-lg transition-colors">
-                      <span className="material-symbols-outlined">
-                        visibility
-                      </span>
-                    </button>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Target Age</label>
+                  <select
+                    value={newTargetAge}
+                    onChange={(e) => setNewTargetAge(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  >
+                    <option value="0-2">0–2 (Board Book)</option>
+                    <option value="3-6">3–6 (Picture Book)</option>
+                    <option value="5-8">5–8 (Early Reader)</option>
+                    <option value="7-12">7–12 (Chapter Book)</option>
+                  </select>
                 </div>
               </div>
             </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowNewProject(false)} className="px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+              <button
+                onClick={handleCreateProject}
+                disabled={creating || !newTitle.trim()}
+                className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {creating ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span className="material-symbols-outlined text-lg">rocket_launch</span>}
+                {creating ? "Creating..." : "Create Project"}
+              </button>
+            </div>
           </div>
-        ))}
-
-        <div className="bg-primary/5 border-2 border-dashed border-primary/20 rounded-xl p-5 flex flex-col items-center justify-center group hover:bg-primary/10 transition-all cursor-pointer">
-          <div className="size-16 rounded-full bg-primary/20 flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
-            <span className="material-symbols-outlined text-4xl">add</span>
-          </div>
-          <p className="text-lg font-bold text-primary">Start New Project</p>
-          <p className="text-sm text-primary/60 mt-1">
-            AI-assisted book creation
-          </p>
         </div>
-      </div>
+      )}
 
-      <div className="mt-12">
-        <h3 className="text-xl font-bold mb-6">Quick Insights</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat) => (
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <div className="size-10 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+        </div>
+      )}
+
+      {/* Project Cards */}
+      {!loading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-10">
+          {projects.map((project) => (
             <div
-              key={stat.label}
-              className="bg-white p-6 rounded-xl border border-primary/5 shadow-sm"
+              key={project.id}
+              className="bg-white rounded-xl border border-primary/10 p-6 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+              onClick={() => navigate(`/story-outline?project=${project.id}`)}
             >
-              <p className="text-sm text-slate-500">{stat.label}</p>
-              <p className="text-3xl font-black text-primary mt-1">
-                {stat.value}
-              </p>
+              <div className="flex items-start justify-between mb-4">
+                <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${getStatusColor(project.status)}`}>
+                  {project.status}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all"
+                >
+                  <span className="material-symbols-outlined text-lg">delete</span>
+                </button>
+              </div>
+              <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">{project.genre}</p>
+              <h3 className="text-lg font-bold mb-2 group-hover:text-primary transition-colors">{project.title}</h3>
+              {project.synopsis && (
+                <p className="text-sm text-slate-500 line-clamp-2 mb-3">{project.synopsis}</p>
+              )}
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Target: ages {project.targetAge}</span>
+                <span>{formatDate(project.updatedAt)}</span>
+              </div>
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-slate-500">{project.progress}% Complete</span>
+                </div>
+                <div className="w-full h-1.5 bg-primary/10 rounded-full">
+                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${project.progress}%` }} />
+                </div>
+              </div>
             </div>
           ))}
+
+          {/* New Project Card */}
+          <div
+            onClick={() => setShowNewProject(true)}
+            className="bg-primary/5 border-2 border-dashed border-primary/20 rounded-xl flex flex-col items-center justify-center gap-3 min-h-[200px] hover:bg-primary/10 transition-all cursor-pointer group"
+          >
+            <div className="size-14 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+              <span className="material-symbols-outlined text-3xl">add</span>
+            </div>
+            <p className="text-base font-bold text-primary">Start New Project</p>
+            <p className="text-xs text-slate-400">AI-assisted book creation</p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Quick Insights - only show when there are projects */}
+      {!loading && projects.length > 0 && (
+        <section>
+          <h3 className="text-xl font-bold mb-4">Quick Insights</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "Total Books", value: projects.length, icon: "menu_book" },
+              { label: "In Progress", value: projects.filter((p) => p.status !== "published").length, icon: "edit_note" },
+              { label: "Published", value: projects.filter((p) => p.status === "published").length, icon: "check_circle" },
+              { label: "Total Words", value: "—", icon: "text_fields" },
+            ].map((s) => (
+              <div key={s.label} className="bg-white rounded-xl p-5 border border-primary/5 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-primary text-lg">{s.icon}</span>
+                  <span className="text-xs text-slate-500">{s.label}</span>
+                </div>
+                <p className="text-2xl font-black">{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

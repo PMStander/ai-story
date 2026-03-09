@@ -1,95 +1,166 @@
-export default function Analytics() {
-  const metrics = [
-    { label: "Total Revenue", value: "$12,440", change: "+18%", icon: "attach_money" },
-    { label: "Books Sold", value: "1,842", change: "+24%", icon: "shopping_cart" },
-    { label: "Page Reads (KU)", value: "48.2K", change: "+12%", icon: "menu_book" },
-    { label: "Avg. Rating", value: "4.6", change: "+0.2", icon: "star" },
-  ];
+import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { getUserProjects, getChapters } from "../lib/firestore";
 
-  const topBooks = [
-    { title: "Potty Training Guide", revenue: "$3,240", units: 432, rank: 1 },
-    { title: "Bedtime Stories for Toddlers", revenue: "$2,890", units: 380, rank: 2 },
-    { title: "Healthy Family Recipes", revenue: "$1,960", units: 264, rank: 3 },
-    { title: "The Last Horizon", revenue: "$1,420", units: 198, rank: 4 },
-    { title: "Little Dreamers Vol. 1", revenue: "$1,180", units: 165, rank: 5 },
-  ];
+export default function Analytics() {
+  const { user } = useAuth();
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ totalWords: 0, totalChapters: 0, totalAssets: 0 });
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const projs = await getUserProjects(user.uid);
+      setProjects(projs);
+
+      let totalWords = 0;
+      let totalChapters = 0;
+      for (const p of projs) {
+        const chs = await getChapters(user.uid, p.id);
+        totalChapters += chs.length;
+        totalWords += chs.reduce((sum, ch) => sum + (ch.content?.split(/\s+/).filter(Boolean).length || 0), 0);
+      }
+      setStats({ totalWords, totalChapters, totalAssets: 0 });
+      setLoading(false);
+    })();
+  }, [user]);
+
+  const published = projects.filter((p) => p.status === "published");
+  const inProgress = projects.filter((p) => p.status !== "published");
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-3xl font-black tracking-tight">Analytics</h2>
-          <p className="text-slate-500 mt-1">Track your book performance and revenue metrics.</p>
-        </div>
-        <div className="flex gap-2">
-          {["7D", "30D", "90D", "1Y"].map((period) => (
-            <button key={period} className={`px-4 py-2 rounded-lg text-sm font-medium ${period === "30D" ? "bg-primary text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-primary/50"} transition-colors`}>
-              {period}
-            </button>
-          ))}
+          <p className="text-slate-500 mt-1">Track your publishing metrics and AI usage.</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {metrics.map((m) => (
-          <div key={m.label} className="bg-white p-6 rounded-xl border border-primary/5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <span className="material-symbols-outlined">{m.icon}</span>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="size-10 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+        </div>
+      ) : (
+        <>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            {[
+              { label: "Total Books", value: projects.length, icon: "menu_book", color: "text-primary" },
+              { label: "Total Words", value: stats.totalWords.toLocaleString(), icon: "text_fields", color: "text-blue-600" },
+              { label: "Total Pages", value: stats.totalChapters, icon: "description", color: "text-amber-600" },
+              { label: "Published", value: published.length, icon: "check_circle", color: "text-green-600" },
+            ].map((s) => (
+              <div key={s.label} className="bg-white rounded-xl p-5 border border-primary/5 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`material-symbols-outlined text-lg ${s.color}`}>{s.icon}</span>
+                  <span className="text-xs text-slate-500">{s.label}</span>
+                </div>
+                <p className="text-3xl font-black">{s.value}</p>
               </div>
-              <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{m.change}</span>
-            </div>
-            <p className="text-sm text-slate-500">{m.label}</p>
-            <p className="text-2xl font-black text-primary mt-1">{m.value}</p>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Revenue Chart Placeholder */}
-      <section className="bg-white rounded-xl border border-primary/10 p-6 mb-8">
-        <h3 className="font-bold mb-6 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">show_chart</span>
-          Revenue Trend
-        </h3>
-        <div className="h-64 flex items-end gap-2 px-4">
-          {[40, 55, 35, 60, 70, 50, 75, 80, 65, 90, 85, 95].map((h, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                className="w-full bg-primary/20 hover:bg-primary/40 rounded-t-lg transition-colors cursor-pointer relative group"
-                style={{ height: `${h}%` }}
-              >
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-primary text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  ${Math.round(h * 14)}
-                </div>
-              </div>
-              <span className="text-[10px] text-slate-400">{["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][i]}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Top Books */}
-      <section className="bg-white rounded-xl border border-primary/10 overflow-hidden">
-        <div className="p-6 border-b border-primary/5">
-          <h3 className="font-bold">Top Performing Books</h3>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {topBooks.map((b) => (
-            <div key={b.title} className="p-5 hover:bg-slate-50 transition-colors flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                  #{b.rank}
-                </div>
-                <span className="font-medium text-sm">{b.title}</span>
-              </div>
-              <div className="flex items-center gap-8 text-sm">
-                <span className="text-slate-500">{b.units} units</span>
-                <span className="font-bold text-primary">{b.revenue}</span>
+          {/* Project Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white rounded-xl border border-primary/10 p-6">
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">timeline</span>
+                Writing Activity
+              </h3>
+              <div className="space-y-4">
+                {projects.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-8 text-center">No project data yet.</p>
+                ) : (
+                  projects.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate">{p.title}</p>
+                        <p className="text-[11px] text-slate-400">{p.genre}</p>
+                      </div>
+                      <div className="w-32">
+                        <div className="h-1.5 bg-primary/10 rounded-full">
+                          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${p.progress || 0}%` }} />
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-primary w-10 text-right">{p.progress || 0}%</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          ))}
-        </div>
-      </section>
+
+            <div className="bg-white rounded-xl border border-primary/10 p-6">
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">psychology</span>
+                AI Usage
+              </h3>
+              <div className="space-y-4">
+                {[
+                  { label: "Text Generations", value: "—", desc: "Story outlines, suggestions" },
+                  { label: "Image Generations", value: "—", desc: "Imagen 3 illustrations" },
+                  { label: "Research Queries", value: "—", desc: "Niche analysis" },
+                  { label: "Social Posts", value: "—", desc: "Content generation" },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between py-2 border-b border-slate-50">
+                    <div>
+                      <p className="text-sm font-medium">{item.label}</p>
+                      <p className="text-[11px] text-slate-400">{item.desc}</p>
+                    </div>
+                    <span className="text-lg font-black text-slate-300">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-4">
+                AI usage tracking will be available in a future update. All API calls use your own key.
+              </p>
+            </div>
+          </div>
+
+          {/* Books Table */}
+          {projects.length > 0 && (
+            <div className="bg-white rounded-xl border border-primary/10 overflow-hidden">
+              <div className="p-6 border-b border-primary/5">
+                <h3 className="font-bold">All Books</h3>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50">
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 px-6 py-3">Title</th>
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 px-6 py-3">Genre</th>
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 px-6 py-3">Status</th>
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 px-6 py-3">Progress</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {projects.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-4 text-sm font-medium">{p.title}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{p.genre}</td>
+                      <td className="px-6 py-4">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${
+                          p.status === "published" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-primary/10 rounded-full">
+                            <div className="h-full bg-primary rounded-full" style={{ width: `${p.progress || 0}%` }} />
+                          </div>
+                          <span className="text-xs font-bold">{p.progress || 0}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

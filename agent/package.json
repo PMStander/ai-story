@@ -1,0 +1,28 @@
+{
+  "name": "ai-story-agent",
+  "version": "1.0.0",
+  "description": "Google ADK-powered AI agent for AI Story Publisher",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "@google/adk": "^0.4.0",
+    "@google/genai": "^1.44.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "private": true
+}
