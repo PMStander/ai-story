@@ -5,6 +5,7 @@ import { useGemini } from "../contexts/GeminiContext";
 import { getProject, updateProject, getChapters, createChapter, deleteChapter } from "../lib/firestore";
 import { generateOutline } from "../lib/gemini";
 import { KDP_TRIM_SIZES, BOOK_TYPES } from "../lib/kdpFormats";
+import { getCategoryConfig, getPageTerminology } from "../lib/bookGenres";
 import StyleGuide from "../components/StyleGuide";
 
 export default function StoryOutline() {
@@ -29,6 +30,11 @@ export default function StoryOutline() {
   const [styleGuide, setStyleGuide] = useState({});
   const [showStyleGuide, setShowStyleGuide] = useState(false);
 
+  // Derived from project
+  const [bookCategory, setBookCategory] = useState('children');
+  const catConfig = getCategoryConfig(bookCategory);
+  const terminology = getPageTerminology(bookCategory);
+
   const loadProject = useCallback(async () => {
     if (!user || !projectId) return;
     setLoading(true);
@@ -40,6 +46,7 @@ export default function StoryOutline() {
       setGenre(p.genre || "");
       setTargetAge(p.targetAge || "3-6");
       setStyleGuide(p.styleGuide || {});
+      setBookCategory(p.bookCategory || 'children');
     }
     const ch = await getChapters(user.uid, projectId);
     setChapters(ch);
@@ -60,11 +67,11 @@ export default function StoryOutline() {
     setGenerating(true);
     setError("");
     try {
-      const outline = await generateOutline(apiKey, { topic: title, genre, targetAge });
-      // Create chapters from the outline
+      const outline = await generateOutline(apiKey, { topic: title, genre, targetAge, bookCategory });
+      // Create chapters/pages from the outline
       for (const page of outline) {
         await createChapter(user.uid, projectId, {
-          title: `Page ${page.pageNumber}`,
+          title: `${terminology.page} ${page.pageNumber}`,
           number: page.pageNumber,
           content: page.text,
           sceneDescription: page.sceneDescription,
@@ -123,8 +130,15 @@ export default function StoryOutline() {
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-3xl font-black tracking-tight">Story Outline</h2>
-          <p className="text-slate-500 mt-1">AI-powered story structuring and chapter planning.</p>
+          <h2 className="text-3xl font-black tracking-tight flex items-center gap-3">
+            Story {terminology.outline}
+            {catConfig && (
+              <span className="text-sm font-bold px-3 py-1 bg-primary/10 text-primary rounded-full">
+                {catConfig.emoji} {catConfig.label}
+              </span>
+            )}
+          </h2>
+          <p className="text-slate-500 mt-1">AI-powered story structuring and {terminology.outline.toLowerCase()} planning.</p>
         </div>
         <button
           onClick={handleGenerateOutline}
@@ -279,10 +293,10 @@ export default function StoryOutline() {
       {/* Chapters */}
       <div className="bg-white rounded-xl border border-primary/10 overflow-hidden">
         <div className="p-6 border-b border-primary/5 flex items-center justify-between">
-          <h3 className="font-bold">Chapter Outline ({chapters.length} pages)</h3>
+          <h3 className="font-bold">{terminology.outline} ({chapters.length} {terminology.plural.toLowerCase()})</h3>
           <button onClick={handleAddChapter} className="text-primary text-sm font-bold flex items-center gap-1 hover:underline">
             <span className="material-symbols-outlined text-sm">add</span>
-            Add Page
+            Add {terminology.page}
           </button>
         </div>
         {chapters.length === 0 ? (

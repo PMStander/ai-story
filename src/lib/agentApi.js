@@ -10,10 +10,11 @@ const AGENT_URL = import.meta.env.VITE_AGENT_URL || 'http://localhost:8080';
  * @param {string} params.message - The user's message
  * @param {string} params.apiKey - The user's Gemini API key
  * @param {Object} [params.pageContext] - Current page context
+ * @param {Object} [params.globalContext] - User's entire library context
  * @param {Array} [params.chatHistory] - Previous messages
  * @returns {Promise<{reply: string, actions: Array}>}
  */
-export async function sendChatMessage({ message, apiKey, pageContext, chatHistory }) {
+export async function sendChatMessage({ message, apiKey, pageContext, globalContext, chatHistory }) {
   const response = await fetch(`${AGENT_URL}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -21,6 +22,7 @@ export async function sendChatMessage({ message, apiKey, pageContext, chatHistor
       message,
       apiKey,
       pageContext,
+      globalContext,
       chatHistory,
     }),
   });

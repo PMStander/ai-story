@@ -317,6 +317,127 @@ const autoGenerateBook = new FunctionTool({
 });
 
 // ============================================================
+// Tool: Create Series
+// ============================================================
+const createSeriesTool = new FunctionTool({
+    name: 'create_series',
+    description:
+        'Creates a new book series in the user\'s account. Use when the user explicitly asks to create, start, or set up a new series. Collects name, description, and niche.',
+    parameters: S(
+        {
+            name: str('The series name (e.g., "Adventures of Brave Bunny")'),
+            description: str('What the series is about — 1-2 sentences'),
+            niche: str('The niche or market the series targets (e.g., "potty training", "social skills")'),
+        },
+        ['name', 'description', 'niche']
+    ),
+    execute: (input: any) => ({
+        status: 'success',
+        action: 'create_series',
+        name: input.name,
+        description: input.description || '',
+        niche: input.niche || '',
+    }),
+});
+
+// ============================================================
+// Tool: Create Book
+// ============================================================
+const createBookTool = new FunctionTool({
+    name: 'create_book',
+    description:
+        'Creates a new book project directly in the user\'s account. Use when the user asks to create or start a new book. Collects title, genre, target age, and optional synopsis.',
+    parameters: S(
+        {
+            title: str('The book title'),
+            genre: str('Genre: adventure, educational, bedtime, social-skills, emotions, animals, fantasy, humor'),
+            targetAge: str('Target age range: 0-2, 3-6, 5-8, or 7-12'),
+            synopsis: str('Short summary of what the book is about (1-3 sentences)'),
+            bookType: str('Book type: picture-book, early-reader, chapter-book, activity-book, educational'),
+        },
+        ['title', 'genre', 'targetAge']
+    ),
+    execute: (input: any) => ({
+        status: 'success',
+        action: 'create_book',
+        title: input.title,
+        genre: input.genre || 'adventure',
+        targetAge: input.targetAge || '3-6',
+        synopsis: input.synopsis || '',
+        bookType: input.bookType || 'picture-book',
+    }),
+});
+
+// ============================================================
+// Tool: Add Series Research
+// ============================================================
+const addSeriesResearch = new FunctionTool({
+    name: 'add_series_research',
+    description: 'Adds a research item (note, link, or idea) to the currently active book series.',
+    parameters: S(
+        {
+            type: str('The type of research item: "note", "link", or "idea"'),
+            title: str('A short title for the research item'),
+            content: str('The detailed content, description, or URL of the research item'),
+        },
+        ['type', 'title', 'content']
+    ),
+    execute: (input: any) => ({
+        status: 'success',
+        action: 'add_series_research',
+        type: input.type,
+        title: input.title,
+        content: input.content,
+    }),
+});
+
+// ============================================================
+// Tool: Add Character to Series Style Guide
+// ============================================================
+const addSeriesCharacter = new FunctionTool({
+    name: 'add_series_character',
+    description: 'Adds a new recurring character to the active series style guide. Use this when the user asks to add a character to their series.',
+    parameters: S(
+        {
+            name: str('The character name'),
+            visualDescription: str('A detailed visual description: hair, eyes, clothing, notable features, proportions, personality hints for illustration'),
+        },
+        ['name', 'visualDescription']
+    ),
+    execute: (input: any) => ({
+        status: 'success',
+        action: 'add_series_character',
+        name: input.name,
+        visualDescription: input.visualDescription,
+    }),
+});
+
+// ============================================================
+// Tool: Update Series Style Guide
+// ============================================================
+const updateSeriesStyleGuide = new FunctionTool({
+    name: 'update_series_style_guide',
+    description: 'Updates the art style, color palette, environment rules, or additional rules for the active series style guide.',
+    parameters: S(
+        {
+            artStyle: str('Optional. The illustration art style prompt to use across the series (e.g. "soft watercolor, gentle brush strokes")'),
+            colorPalette: str('Optional. The color palette description (e.g. "warm pastels", "bold primary colors")'),
+            environmentRules: str('Optional. Description of the typical setting/environment for scenes'),
+            additionalRules: str('Optional. Any additional visual rules for consistency (e.g. "always include sunflowers", "no text in illustrations")'),
+        },
+        []
+    ),
+    execute: (input: any) => ({
+        status: 'success',
+        action: 'update_series_style_guide',
+        artStyle: input.artStyle,
+        colorPalette: input.colorPalette,
+        environmentRules: input.environmentRules,
+        additionalRules: input.additionalRules,
+    }),
+});
+
+// ============================================================
 // Tool: Check Series Consistency
 // ============================================================
 const checkSeriesConsistency = new FunctionTool({
@@ -394,6 +515,8 @@ export function createAgent(_apiKey: string) {
 - **optimize_for_kdp**: Detailed KDP optimization — pricing, categories, keywords, description
 
 ### Book & Series Management
+- **create_series**: Create a new book series in the user's account
+- **create_book**: Create a new book project in the user's account
 - **suggest_series_ideas**: Suggest new books for a series
 - **auto_generate_book**: Start the full AI book generation pipeline (redirects to Book Wizard)
 - **check_series_consistency**: Validate consistency across books in a series
@@ -409,8 +532,15 @@ You receive context about the user's current page and project. Use this to provi
 - Be encouraging and supportive
 - Keep responses concise and actionable
 - For KDP optimization, use real market knowledge from Amazon's children's book category
-- When discussing series, emphasize consistency in characters, style, and themes
-- For general advice, respond directly without using tools`,
+- General advice should be direct and conversational
+
+## Orchestration Workflow Instructions
+You have access to the user's GLOBAL CONTEXT (a list of all their existing series and books). When the user asks you to "create a new series" or "come up with a series and its books", follow these steps using your tools:
+1. **Research**: Use \`googleSearch\` or \`deep_research\` to look up industry standards for similar books (e.g., standard page counts, current bestsellers, trim sizes).
+2. **Create the Series**: Call the \`create_series\` tool with an original name, detailed description, and targeted niche.
+3. **Save Research**: Call the \`add_series_research\` tool to save the market data you found (e.g., standard page counts, competitor titles) directly to the newly created series.
+4. **Create Books**: Based on the concept, use the \`create_book\` tool sequentially to generate the first 2-3 books in that series.
+5. **Communicate**: Tell the user what you have done and what market data you found.`,
         tools: [
             updatePageContent,
             suggestContinuation,
@@ -425,6 +555,11 @@ You receive context about the user's current page and project. Use this to provi
             autoGenerateBook,
             checkSeriesConsistency,
             optimizeForKdp,
+            createSeriesTool,
+            createBookTool,
+            addSeriesResearch,
+            addSeriesCharacter,
+            updateSeriesStyleGuide,
         ],
     });
 }

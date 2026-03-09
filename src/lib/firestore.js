@@ -227,6 +227,18 @@ export async function duplicateAsset(uid, projectId, asset) {
   });
 }
 
+export async function moveAsset(uid, fromProjectId, toProjectId, asset) {
+  // Create in destination (same URL — no re-upload needed)
+  await createAsset(uid, toProjectId, {
+    ...asset,
+    id: undefined,
+    createdAt: undefined,
+  });
+  // Delete from source
+  await deleteAsset(uid, fromProjectId, asset.id);
+}
+
+
 // ============================================================
 // Settings (Gemini API Key)
 // ============================================================
@@ -303,6 +315,8 @@ export async function createSeries(uid, data) {
     name: data.name || "Untitled Series",
     description: data.description || "",
     niche: data.niche || "",
+    scratchpad: data.scratchpad || "",
+    research: data.research || [],
     bookIds: data.bookIds || [],
     styleGuide: data.styleGuide || {
       artStyle: "",
@@ -340,3 +354,92 @@ export async function deleteSeries(uid, seriesId) {
   return deleteDoc(seriesRef(uid, seriesId));
 }
 
+// ── Series-level assets (shared across all books in the series) ──────────────
+
+function seriesAssetsCol(uid, seriesId) {
+  return collection(db, "users", uid, "series", seriesId, "assets");
+}
+
+export async function createSeriesAsset(uid, seriesId, data) {
+  const ref = await addDoc(seriesAssetsCol(uid, seriesId), {
+    name:          data.name          || "",
+    type:          data.type          || "character",
+    url:           data.url           || "",
+    storagePath:   data.storagePath   || "",
+    prompt:        data.prompt        || "",
+    style:         data.style         || "",
+    characterName: data.characterName || null,
+    pose:          data.pose          || null,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function getSeriesAssets(uid, seriesId) {
+  const q = query(seriesAssetsCol(uid, seriesId), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function deleteSeriesAsset(uid, seriesId, assetId) {
+  return deleteDoc(doc(db, "users", uid, "series", seriesId, "assets", assetId));
+}
+
+// Move a project asset up to the series level
+export async function moveProjectAssetToSeries(uid, fromProjectId, seriesId, asset) {
+  await createSeriesAsset(uid, seriesId, asset);
+  await deleteAsset(uid, fromProjectId, asset.id);
+}
+
+
+// ============================================================
+// Chats
+// ============================================================
+
+function chatsCol(uid) {
+  return collection(db, "users", uid, "chats");
+}
+
+function chatRef(uid, chatId) {
+  return doc(db, "users", uid, "chats", chatId);
+}
+
+export async function createChat(uid, title) {
+  const ref = await addDoc(chatsCol(uid), {
+    title: title || "New Chat",
+    messages: [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateChatMessages(uid, chatId, messages) {
+  // Serialize timestamps to numbers so Firestore can store them
+  const serialized = messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    timestamp: m.timestamp || Date.now(),
+    error: m.error || false,
+    actions: (m.actions || []).map((a) => ({ ...a })),
+  }));
+  return updateDoc(chatRef(uid, chatId), {
+    messages: serialized,
+    // Use first user message as title if still "New Chat"
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateChatTitle(uid, chatId, title) {
+  return updateDoc(chatRef(uid, chatId), { title, updatedAt: serverTimestamp() });
+}
+
+export async function getUserChats(uid) {
+  const q = query(chatsCol(uid), orderBy("updatedAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function deleteChat(uid, chatId) {
+  return deleteDoc(chatRef(uid, chatId));
+}

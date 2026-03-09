@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGemini } from "../contexts/GeminiContext";
 import { deepResearchNiche, researchNiche } from "../lib/gemini";
+import { BOOK_CATEGORIES, getCategoryConfig } from "../lib/bookGenres";
 
 const TABS = [
   { id: "keywords", label: "Keywords", icon: "key" },
@@ -20,6 +21,9 @@ export default function NicheResearch() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("keywords");
   const [researchMode, setResearchMode] = useState("deep"); // "quick" | "deep"
+  const [bookCategory, setBookCategory] = useState("children");
+
+  const catConfig = getCategoryConfig(bookCategory);
 
   const handleResearch = async () => {
     if (!query.trim()) return;
@@ -34,8 +38,8 @@ export default function NicheResearch() {
 
     try {
       const data = researchMode === "deep"
-        ? await deepResearchNiche(apiKey, query.trim())
-        : await researchNiche(apiKey, query.trim());
+        ? await deepResearchNiche(apiKey, query.trim(), bookCategory)
+        : await researchNiche(apiKey, query.trim(), bookCategory);
       setResults(data);
       setActiveTab("keywords");
     } catch (err) {
@@ -50,12 +54,21 @@ export default function NicheResearch() {
     navigate(`/?create=${encodeURIComponent(title)}`);
   };
 
+  const QUICK_SUGGESTIONS = {
+    children: ["Potty Training", "Bedtime Stories", "Feelings & Emotions", "Social Skills", "Letters & Numbers", "Healthy Eating", "Dinosaurs", "Kindness"],
+    comic: ["Superhero origin story", "Sci-fi space adventure", "Medieval fantasy quest", "Mystery detective", "Horror thriller", "Comedy slice of life"],
+    fiction: ["Psychological thriller", "Enemies to lovers romance", "AI dystopia sci-fi", "Small town mystery", "Epic fantasy world", "Historical war drama"],
+    christian: ["Daily devotionals for women", "Men's faith journey", "Bible stories for kids", "Prayer journal", "Marriage & faith", "Grief and healing"],
+    humor: ["Dad jokes", "Work from home struggles", "Cat owner life", "Parenting fails", "Millennial nostalgia", "Adulting is hard"],
+    puzzle: ["Word search for seniors", "Sudoku for beginners", "Ocean animals mazes", "Bible word puzzles", "Trivia for kids", "Large print crosswords"],
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-3xl font-black tracking-tight">Niche Research</h2>
-          <p className="text-slate-500 mt-1">AI-powered deep market intelligence for Amazon KDP.</p>
+          <p className="text-slate-500 mt-1">AI-powered deep market intelligence for Amazon KDP — any book type.</p>
         </div>
       </div>
 
@@ -72,10 +85,30 @@ export default function NicheResearch() {
 
       {/* Search */}
       <div className="bg-white rounded-xl border border-primary/10 p-6 mb-8">
+        {/* Category selector */}
+        <div className="mb-5">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Book Category</label>
+          <div className="flex flex-wrap gap-2">
+            {Object.values(BOOK_CATEGORIES).map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => { setBookCategory(cat.id); setResults(null); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                  bookCategory === cat.id
+                    ? "bg-primary text-white border-primary"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-primary/40"
+                }`}
+              >
+                {cat.emoji} {cat.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">psychology</span>
-            AI Niche Intelligence
+            {catConfig.emoji} {catConfig.label} Market Intelligence
           </h3>
           <div className="flex bg-slate-100 rounded-lg p-0.5">
             <button
@@ -99,7 +132,7 @@ export default function NicheResearch() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleResearch()}
             className="flex-1 rounded-xl border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:ring-primary focus:border-primary"
-            placeholder="Enter a topic or keyword to research... e.g., potty training, bedtime stories, emotions"
+            placeholder={`Enter a ${catConfig.label.toLowerCase()} topic or keyword to research...`}
           />
           <button
             onClick={handleResearch}
@@ -122,7 +155,7 @@ export default function NicheResearch() {
 
         {/* Quick suggestions */}
         <div className="flex flex-wrap gap-2 mt-3">
-          {["Potty Training", "Bedtime Stories", "Feelings & Emotions", "Social Skills", "Letters & Numbers", "Healthy Eating", "Dinosaurs", "Kindness"].map((s) => (
+          {(QUICK_SUGGESTIONS[bookCategory] || QUICK_SUGGESTIONS.children).map((s) => (
             <button
               key={s}
               onClick={() => setQuery(s)}

@@ -4,7 +4,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { useGemini } from "../contexts/GeminiContext";
 import { useAgent } from "../contexts/AgentProvider";
 import { getProject, getChapters, updateChapter, createAsset, getAssets } from "../lib/firestore";
-import { suggestNextSentence, generateImage, buildStylePrompt } from "../lib/gemini";
+import { suggestNextSentence, generateImage, buildStylePrompt, generatePuzzleWordList } from "../lib/gemini";
+import { generateCrossword, generateWordSearch } from "../lib/puzzleEngine";
+import { renderCrossword, renderWordSearch, svgToDataUrl } from "../lib/puzzleRenderer";
 import { KDP_TRIM_SIZES } from "../lib/kdpFormats";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { storage } from "../lib/firebase";
@@ -117,6 +119,10 @@ export default function StoryStudio() {
   const [allAssets, setAllAssets] = useState([]);
   const [imagePrompt, setImagePrompt] = useState("");
   const [suggesting, setSuggesting] = useState(false);
+  const [generatingPuzzle, setGeneratingPuzzle] = useState(false);
+  const [puzzleTopic, setPuzzleTopic] = useState("");
+  const [puzzleType, setPuzzleType] = useState("crossword");
+  const [puzzleDifficulty, setPuzzleDifficulty] = useState("medium");
   const autoSaveTimer = useRef(null);
   const canvasRef = useRef(null);
   const dragState = useRef(null);
@@ -435,6 +441,85 @@ export default function StoryStudio() {
       console.error("Suggest failed:", e);
     }
     setSuggesting(false);
+  }
+
+  async function handleGeneratePuzzle() {
+    if (!hasApiKey || !puzzleTopic.trim()) return;
+    setGeneratingPuzzle(true);
+    try {
+      // 1. Generate word list
+      const wordList = await generatePuzzleWordList(apiKey, {
+        topic: puzzleTopic.trim(),
+        puzzleType,
+        difficulty: puzzleDifficulty,
+        wordCount: puzzleType === "crossword" ? 15 : 20
+      });
+
+      // 2. Generate grid & SVG
+      let puzzleData, svgPuzzle, svgAnswer;
+      const title = `${puzzleType === "crossword" ? "Crossword" : "Word Search"}: ${puzzleTopic}`;
+
+      if (puzzleType === "crossword") {
+        puzzleData = generateCrossword(wordList);
+        svgPuzzle = renderCrossword(puzzleData, { showAnswers: false, title });
+        svgAnswer = renderCrossword(puzzleData, { showAnswers: true, title });
+      } else {
+        puzzleData = generateWordSearch(wordList, { difficulty: puzzleDifficulty });
+        svgPuzzle = renderWordSearch(puzzleData, { showAnswers: false, title });
+        svgAnswer = renderWordSearch(puzzleData, { showAnswers: true, title });
+      }
+
+      // 3. SVG -> PNG data URL
+      const [puzzleDataUrl, answerDataUrl] = await Promise.all([
+        svgToDataUrl(svgPuzzle),
+        svgToDataUrl(answerDataUrl || svgAnswer)
+      ]);
+
+      // 4. Upload & Create assets
+      const puzzleFilename = `puzzle_${Date.now()}.png`;
+      const answerFilename = `answer_${Date.now()}.png`;
+
+      const pRef = ref(storage, `users/${user.uid}/projects/${projectId}/${puzzleFilename}`);
+      const aRef = ref(storage, `users/${user.uid}/projects/${projectId}/${answerFilename}`);
+
+      await Promise.all([
+        uploadString(pRef, puzzleDataUrl, "data_url"),
+        uploadString(aRef, answerDataUrl, "data_url")
+      ]);
+
+      const [pUrl, aUrl] = await Promise.all([
+        getDownloadURL(pRef),
+        getDownloadURL(aRef)
+      ]);
+
+      // Save to library
+      await createAsset(user.uid, projectId, {
+        name: title,
+        type: "puzzle",
+        pageNumber: activeChapter?.number,
+        url: pUrl,
+        storagePath: pRef.fullPath,
+        prompt: puzzleTopic,
+        style: puzzleType
+      });
+
+      await createAsset(user.uid, projectId, {
+        name: `${title} (Answer Key)`,
+        type: "answer-key",
+        pageNumber: activeChapter?.number,
+        url: aUrl,
+        storagePath: aRef.fullPath,
+        prompt: "Answer key",
+        style: puzzleType
+      });
+
+      // 5. Add to canvas
+      addImageElement(pUrl);
+      setAiPanelOpen(false);
+    } catch (e) {
+      console.error("Puzzle generation failed:", e);
+    }
+    setGeneratingPuzzle(false);
   }
 
   const selectedEl = layout?.elements?.find(e => e.id === selectedId);
@@ -831,6 +916,54 @@ export default function StoryStudio() {
             <p className="text-[9px] font-bold uppercase tracking-widest text-purple-400 flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">auto_awesome</span> AI Tools
             </p>
+
+            {/* Puzzle builder */}
+            <div className="pt-2 border-t border-slate-700/50">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-purple-400 flex items-center gap-1 mb-2">
+                <span className="material-symbols-outlined text-sm">grid_on</span> Puzzle Builder
+              </p>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={puzzleTopic}
+                  onChange={e => setPuzzleTopic(e.target.value)}
+                  placeholder="Puzzle topic (e.g. Space Travel)"
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-xs text-white focus:border-purple-400 focus:outline-none"
+                />
+                <div className="flex gap-1">
+                  {["crossword", "word-search"].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setPuzzleType(t)}
+                      className={`flex-1 py-1 rounded text-[9px] font-bold capitalize transition-colors ${puzzleType === t ? "bg-purple-600 text-white" : "bg-slate-700 text-slate-400 hover:bg-slate-600"}`}
+                    >
+                      {t.replace("-", " ")}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                   {["easy", "medium", "hard"].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setPuzzleDifficulty(d)}
+                      className={`flex-1 py-1 rounded text-[9px] font-bold capitalize transition-colors ${puzzleDifficulty === d ? "bg-purple-600 text-white" : "bg-slate-700 text-slate-400 hover:bg-slate-600"}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleGeneratePuzzle}
+                  disabled={generatingPuzzle || !hasApiKey || !puzzleTopic.trim()}
+                  className="w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {generatingPuzzle
+                    ? <><div className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Building...</>
+                    : <><span className="material-symbols-outlined text-sm">extension</span>Generate Puzzle</>
+                  }
+                </button>
+              </div>
+            </div>
 
             {/* Image generation */}
             <div>

@@ -20,6 +20,20 @@ const PAGE_NAMES = {
   "/settings": "Settings",
 };
 
+function formatDate(chat) {
+  const ts = chat.updatedAt?.seconds
+    ? new Date(chat.updatedAt.seconds * 1000)
+    : chat.updatedAt instanceof Date
+    ? chat.updatedAt
+    : new Date();
+  const now = new Date();
+  const diff = (now - ts) / 1000;
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return ts.toLocaleDateString();
+}
+
 export default function AgentChat() {
   const {
     isOpen,
@@ -30,6 +44,14 @@ export default function AgentChat() {
     clearChat,
     hasApiKey,
     setPageContext,
+    // Chat history
+    chatList,
+    activeChatId,
+    showHistory,
+    setShowHistory,
+    startNewChat,
+    loadChat,
+    removeChatFromList,
   } = useAgent();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef(null);
@@ -50,8 +72,8 @@ export default function AgentChat() {
 
   // Focus input on open
   useEffect(() => {
-    if (isOpen) inputRef.current?.focus();
-  }, [isOpen]);
+    if (isOpen && !showHistory) inputRef.current?.focus();
+  }, [isOpen, showHistory]);
 
   const handleSend = () => {
     if (!input.trim() || loading) return;
@@ -78,6 +100,14 @@ export default function AgentChat() {
       ad_keywords: { icon: "campaign", label: "Ad keywords ready", color: "text-orange-600 bg-orange-50" },
       series_ideas: { icon: "library_books", label: "Series ideas ready", color: "text-indigo-600 bg-indigo-50" },
       book_metadata: { icon: "publish", label: "Metadata optimized", color: "text-teal-600 bg-teal-50" },
+      create_series: { icon: "library_add", label: "Creating series…", color: "text-violet-600 bg-violet-50" },
+      create_book: { icon: "book", label: "Creating book…", color: "text-emerald-600 bg-emerald-50" },
+      redirect_book_wizard: { icon: "auto_fix_high", label: "Opening Book Wizard", color: "text-amber-600 bg-amber-50" },
+      deep_research: { icon: "analytics", label: "Deep research complete", color: "text-cyan-600 bg-cyan-50" },
+      kdp_optimization: { icon: "storefront", label: "KDP optimization ready", color: "text-orange-600 bg-orange-50" },
+      add_series_character: { icon: "person_add", label: "Added character to Style Guide", color: "text-rose-600 bg-rose-50" },
+      update_series_style_guide: { icon: "palette", label: "Updated Style Guide", color: "text-violet-600 bg-violet-50" },
+      add_series_research: { icon: "science", label: "Added to Research Hub", color: "text-cyan-600 bg-cyan-50" },
     };
     const info = icons[action.action] || { icon: "check", label: action.action, color: "text-slate-600 bg-slate-50" };
 
@@ -124,12 +154,29 @@ export default function AgentChat() {
             <div>
               <h3 className="text-sm font-bold text-slate-800">AI Assistant</h3>
               <p className="text-[10px] text-slate-400">
-                {PAGE_NAMES[location.pathname] || "Ready to help"}
+                {showHistory ? "Chat History" : PAGE_NAMES[location.pathname] || "Ready to help"}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {messages.length > 0 && (
+            {/* History toggle */}
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className={`p-1.5 rounded-lg transition-colors ${showHistory ? "bg-primary/10 text-primary" : "hover:bg-slate-100 text-slate-400"}`}
+              title="Chat history"
+            >
+              <span className="material-symbols-outlined text-lg">history</span>
+            </button>
+            {/* New chat */}
+            <button
+              onClick={startNewChat}
+              className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-lg transition-colors"
+              title="New chat"
+            >
+              <span className="material-symbols-outlined text-lg">add_comment</span>
+            </button>
+            {/* Clear current chat */}
+            {messages.length > 0 && !showHistory && (
               <button
                 onClick={clearChat}
                 className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
@@ -141,113 +188,154 @@ export default function AgentChat() {
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
-          {messages.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center h-full text-center px-6">
-              <div className="size-16 bg-linear-to-br from-primary/10 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
-                <span className="material-symbols-outlined text-primary text-3xl">auto_awesome</span>
+        {/* History Panel */}
+        {showHistory ? (
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {chatList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-10">
+                <span className="material-symbols-outlined text-4xl text-slate-200 mb-2">history</span>
+                <p className="text-xs text-slate-400">No chat history yet. Start a conversation!</p>
               </div>
-              <h4 className="font-bold text-slate-700 mb-2">How can I help?</h4>
-              <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-                I can help with writing stories, generating illustrations, researching niches, creating social posts, and more.
-              </p>
-              {/* Quick actions */}
-              <div className="flex flex-wrap justify-center gap-2">
-                {[
-                  "✍️ Continue my story",
-                  "🎨 Generate an illustration",
-                  "🔍 Research a niche",
-                  "📱 Create social post",
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => {
-                      setInput(suggestion.replace(/^[^\s]+\s/, ""));
-                      inputRef.current?.focus();
-                    }}
-                    className="px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-colors"
+            ) : (
+              <div className="space-y-1.5">
+                {chatList.map((chat) => (
+                  <div
+                    key={chat.id}
+                    onClick={() => loadChat(chat)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer group transition-colors ${
+                      activeChatId === chat.id
+                        ? "bg-primary/10 border border-primary/20"
+                        : "hover:bg-slate-50 border border-transparent"
+                    }`}
                   >
-                    {suggestion}
-                  </button>
+                    <span className="material-symbols-outlined text-slate-400 text-lg shrink-0">chat_bubble</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-700 truncate">{chat.title || "Untitled chat"}</p>
+                      <p className="text-[10px] text-slate-400">{formatDate(chat)}</p>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeChatFromList(chat.id); }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 text-slate-300 rounded transition-all"
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                    </button>
+                  </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-white rounded-br-md"
-                    : msg.error
-                    ? "bg-red-50 text-red-700 border border-red-200 rounded-bl-md"
-                    : "bg-slate-50 text-slate-700 border border-slate-100 rounded-bl-md"
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-                {msg.actions?.map(renderAction)}
-                {msg.actions?.some((a) => a.action === "add_image" && a.imageUrl) && (
-                  <div className="mt-3 rounded-xl overflow-hidden border border-slate-200">
-                    <img
-                      src={msg.actions.find((a) => a.action === "add_image").imageUrl}
-                      alt="Generated illustration"
-                      className="w-full aspect-square object-cover"
-                    />
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
+              {messages.length === 0 && !loading && (
+                <div className="flex flex-col items-center justify-center h-full text-center px-6">
+                  <div className="size-16 bg-linear-to-br from-primary/10 to-purple-100 rounded-2xl flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-primary text-3xl">auto_awesome</span>
                   </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
-                <div className="flex gap-1">
-                  <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <h4 className="font-bold text-slate-700 mb-2">How can I help?</h4>
+                  <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+                    I can write stories, create series, add characters to your style guide, research niches, and more.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {[
+                      "✍️ Continue my story",
+                      "🎨 Generate an illustration",
+                      "🔍 Research a niche",
+                      "📚 Create a new series",
+                      "📖 Create a new book",
+                      "🎭 Add a character to style guide",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        onClick={() => {
+                          setInput(suggestion.replace(/^[^\s]+\s/, ""));
+                          inputRef.current?.focus();
+                        }}
+                        className="px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-colors"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <span className="text-xs text-slate-400 ml-1">Thinking...</span>
-              </div>
-            </div>
-          )}
+              )}
 
-          <div ref={messagesEndRef} />
-        </div>
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-primary text-white rounded-br-md"
+                        : msg.error
+                        ? "bg-red-50 text-red-700 border border-red-200 rounded-bl-md"
+                        : "bg-slate-50 text-slate-700 border border-slate-100 rounded-bl-md"
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    {msg.actions?.map(renderAction)}
+                    {msg.actions?.some((a) => a.action === "add_image" && a.imageUrl) && (
+                      <div className="mt-3 rounded-xl overflow-hidden border border-slate-200">
+                        <img
+                          src={msg.actions.find((a) => a.action === "add_image").imageUrl}
+                          alt="Generated illustration"
+                          className="w-full aspect-square object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
 
-        {/* Input */}
-        <div className="px-4 py-3 border-t border-slate-100 shrink-0">
-          {!hasApiKey ? (
-            <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2.5">
-              <span className="material-symbols-outlined text-sm">warning</span>
-              Set your Gemini API key in Settings to use the AI assistant.
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="size-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                    <span className="text-xs text-slate-400 ml-1">Thinking...</span>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask me anything..."
-                className="flex-1 bg-slate-50 rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-slate-400"
-                disabled={loading}
-              />
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || loading}
-                className="size-10 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-              >
-                <span className="material-symbols-outlined text-lg">send</span>
-              </button>
+
+            {/* Input */}
+            <div className="px-4 py-3 border-t border-slate-100 shrink-0">
+              {!hasApiKey ? (
+                <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2.5">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  Set your Gemini API key in Settings to use the AI assistant.
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Ask me anything..."
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    disabled={loading}
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || loading}
+                    className="size-10 shrink-0 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <span className="material-symbols-outlined text-lg">send</span>
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </>
   );

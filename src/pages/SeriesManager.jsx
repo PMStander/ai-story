@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useGemini } from "../contexts/GeminiContext";
+import { useAgent } from "../contexts/AgentProvider";
 import { useNavigate } from "react-router-dom";
 import {
   getUserProjects,
@@ -11,10 +12,12 @@ import {
 } from "../lib/firestore";
 import { generateText } from "../lib/gemini";
 import StyleGuide from "../components/StyleGuide";
+import SeriesResearchHub from "../components/SeriesResearchHub";
 
 export default function SeriesManager() {
   const { user } = useAuth();
   const { apiKey, hasApiKey } = useGemini();
+  const { registerActionHandler, setPageContext } = useAgent();
   const navigate = useNavigate();
 
   const [series, setSeries] = useState([]);
@@ -22,7 +25,11 @@ export default function SeriesManager() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSeries, setSelectedSeries] = useState(null);
-  const [editingStyleGuide, setEditingStyleGuide] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'styleGuide', 'research'
+  const [localStyleGuide, setLocalStyleGuide] = useState({});
+  const [styleGuideDirty, setStyleGuideDirty] = useState(false);
+  const [styleGuideSaving, setStyleGuideSaving] = useState(false);
+  const [error, setError] = useState(null);
 
   // Create form
   const [newName, setNewName] = useState("");
@@ -53,6 +60,101 @@ export default function SeriesManager() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!selectedSeries) {
+      setPageContext({
+        page: 'Series Manager',
+        activeSeries: null,
+      });
+      setActiveTab("overview");
+    } else {
+      setPageContext({
+        page: 'Series Manager',
+        activeSeries: selectedSeries.name,
+        seriesDescription: selectedSeries.description,
+        seriesNiche: selectedSeries.niche,
+        // Pass research items, scratchpad, and style guide so the agent can see current state
+        seriesResearch: selectedSeries.research || [],
+        seriesScratchpad: selectedSeries.scratchpad || '',
+        seriesStyleGuide: selectedSeries.styleGuide || {},
+      });
+    }
+  }, [selectedSeries, setPageContext]);
+
+  // Sync local style guide state when selected series changes
+  useEffect(() => {
+    setLocalStyleGuide(selectedSeries?.styleGuide || {});
+    setStyleGuideDirty(false);
+  }, [selectedSeries?.id]);
+
+  useEffect(() => {
+    if (!selectedSeries || !user) return;
+    
+    const unregister = registerActionHandler('add_series_research', async (action) => {
+       const newItems = [...(selectedSeries.research || []), {
+         id: 'res_' + Date.now(),
+         type: action.type || 'note',
+         title: action.title,
+         content: action.content,
+         dateAdded: new Date().toISOString()
+       }];
+       
+       try {
+         await updateSeries(user.uid, selectedSeries.id, { research: newItems });
+         setSelectedSeries(s => ({...s, research: newItems}));
+         setActiveTab("research"); 
+         loadData();
+       } catch (err) {
+         console.error('Failed to add series research from agent:', err);
+       }
+    });
+
+    const unregisterChar = registerActionHandler('add_series_character', async (action) => {
+      const currentGuide = selectedSeries.styleGuide || { characters: [] };
+      // Support batch additions — all characters appended in one write
+      const newChars = action._batch
+        ? action._batch.map((c) => ({ name: c.name, visualDescription: c.visualDescription }))
+        : [{ name: action.name, visualDescription: action.visualDescription }];
+      const updatedGuide = {
+        ...currentGuide,
+        characters: [...(currentGuide.characters || []), ...newChars],
+      };
+      try {
+        await updateSeries(user.uid, selectedSeries.id, { styleGuide: updatedGuide });
+        setSelectedSeries(s => ({...s, styleGuide: updatedGuide}));
+        setLocalStyleGuide(updatedGuide);
+        setActiveTab("styleGuide");
+        loadData();
+      } catch (err) {
+        console.error('Failed to add character from agent:', err);
+      }
+    });
+
+
+    const unregisterStyleGuide = registerActionHandler('update_series_style_guide', async (action) => {
+      const currentGuide = selectedSeries.styleGuide || {};
+      const updatedGuide = {
+        ...currentGuide,
+        ...(action.artStyle && { artStyle: action.artStyle }),
+        ...(action.colorPalette && { colorPalette: action.colorPalette }),
+        ...(action.environmentRules && { environmentRules: action.environmentRules }),
+        ...(action.additionalRules && { additionalRules: action.additionalRules }),
+      };
+      try {
+        await updateSeries(user.uid, selectedSeries.id, { styleGuide: updatedGuide });
+        setSelectedSeries(s => ({...s, styleGuide: updatedGuide}));
+        setLocalStyleGuide(updatedGuide);
+        setActiveTab("styleGuide");
+        loadData();
+      } catch (err) {
+        console.error('Failed to update style guide from agent:', err);
+      }
+    });
+    
+    return () => { unregister(); unregisterChar(); unregisterStyleGuide(); };
+
+  }, [selectedSeries, user, registerActionHandler, loadData]);
+
   const handleCreateSeries = async () => {
     if (!newName.trim() || !user) return;
     try {
@@ -65,17 +167,25 @@ export default function SeriesManager() {
       setNewDesc("");
       setNewNiche("");
       setShowCreate(false);
+      setError(null);
       loadData();
-    } catch {
-      // handle error
+    } catch (err) {
+      console.error("Error creating series:", err);
+      setError("Failed to create series. Please try again.");
     }
   };
 
   const handleDeleteSeries = async (seriesId) => {
     if (!user || !confirm("Delete this series? Books won't be deleted.")) return;
-    await deleteSeries(user.uid, seriesId);
-    if (selectedSeries?.id === seriesId) setSelectedSeries(null);
-    loadData();
+    try {
+      await deleteSeries(user.uid, seriesId);
+      if (selectedSeries?.id === seriesId) setSelectedSeries(null);
+      setError(null);
+      loadData();
+    } catch (err) {
+      console.error("Error deleting series:", err);
+      setError("Failed to delete series.");
+    }
   };
 
   const handleAddBookToSeries = async (seriesData, projectId) => {
@@ -97,8 +207,17 @@ export default function SeriesManager() {
 
   const handleStyleGuideChange = async (seriesData, styleGuide) => {
     if (!user) return;
-    await updateSeries(user.uid, seriesData.id, { styleGuide });
-    loadData();
+    setStyleGuideSaving(true);
+    try {
+      await updateSeries(user.uid, seriesData.id, { styleGuide });
+      setSelectedSeries(s => s ? { ...s, styleGuide } : s);
+      setStyleGuideDirty(false);
+      loadData();
+    } catch (err) {
+      console.error('Failed to save style guide:', err);
+    } finally {
+      setStyleGuideSaving(false);
+    }
   };
 
   const handleAiConsistencyCheck = async (seriesData) => {
@@ -186,6 +305,16 @@ Provide a JSON response: { "title": "suggested title", "synopsis": "2-3 sentence
         </button>
       </div>
 
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+          <span className="material-symbols-outlined">error</span>
+          <p className="text-sm font-bold">{error}</p>
+          <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+
       {/* Create Series Form */}
       {showCreate && (
         <div className="bg-white rounded-xl border border-primary/10 p-6 mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -237,7 +366,7 @@ Provide a JSON response: { "title": "suggested title", "synopsis": "2-3 sentence
               return (
                 <button
                   key={s.id}
-                  onClick={() => { setSelectedSeries(s); setEditingStyleGuide(false); }}
+                  onClick={() => { setSelectedSeries(s); }}
                   className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                     selectedSeries?.id === s.id
                       ? "border-primary bg-primary/5 shadow-md"
@@ -322,7 +451,43 @@ Provide a JSON response: { "title": "suggested title", "synopsis": "2-3 sentence
                       </button>
                     </div>
                   </div>
+                  {/* Tabs */}
+                  <div className="flex items-center gap-1 mt-4">
+                    <button
+                      onClick={() => setActiveTab('overview')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                        activeTab === 'overview'
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      Overview & Books
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('styleGuide')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                        activeTab === 'styleGuide'
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      Style Guide
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('research')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                        activeTab === 'research'
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      Research Hub
+                    </button>
+                  </div>
+                </div>
 
+                {activeTab === 'overview' && (
+                  <>
                   {/* AI Consistency Check Result */}
                   {selectedSeries.consistencyCheck && (
                     <div className="p-4 bg-slate-50 rounded-xl mb-4">
@@ -446,55 +611,58 @@ Provide a JSON response: { "title": "suggested title", "synopsis": "2-3 sentence
                       </div>
                     )}
                   </div>
-                </div>
+                  </>
+                )}
 
-                {/* Style Guide */}
-                <div className="bg-white rounded-xl border border-primary/10 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-bold flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary">palette</span>
-                      Series Style Guide
-                    </h4>
-                    <button
-                      onClick={() => setEditingStyleGuide(!editingStyleGuide)}
-                      className="text-primary text-xs font-bold hover:underline"
-                    >
-                      {editingStyleGuide ? "Close" : "Edit Style Guide"}
-                    </button>
-                  </div>
-
-                  {!editingStyleGuide ? (
-                    <div>
-                      {selectedSeries.styleGuide?.artStyle ? (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {selectedSeries.styleGuide.artStyle && (
-                              <span className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full font-medium">🎨 {selectedSeries.styleGuide.artStyle.slice(0, 40)}...</span>
-                            )}
-                            {selectedSeries.styleGuide.colorPalette && (
-                              <span className="text-xs bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-medium">🎨 {selectedSeries.styleGuide.colorPalette}</span>
-                            )}
-                          </div>
-                          {selectedSeries.styleGuide.characters?.length > 0 && (
-                            <div>
-                              <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Characters</p>
-                              {selectedSeries.styleGuide.characters.map((c, i) => (
-                                <p key={i} className="text-xs text-slate-600"><strong>{c.name}:</strong> {c.visualDescription}</p>
-                              ))}
-                            </div>
+                {/* Style Guide Tab */}
+                {activeTab === 'styleGuide' && (
+                  <div className="bg-white rounded-xl border border-primary/10 p-6">
+                    <div className="flex items-center justify-between mb-5">
+                      <h4 className="font-bold flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary">palette</span>
+                        Series Style Guide
+                      </h4>
+                      {styleGuideDirty && (
+                        <button
+                          onClick={() => handleStyleGuideChange(selectedSeries, localStyleGuide)}
+                          disabled={styleGuideSaving}
+                          className="px-4 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          {styleGuideSaving ? (
+                            <div className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <span className="material-symbols-outlined text-sm">save</span>
                           )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic">No style guide defined. Set one to maintain visual consistency across all books.</p>
+                          {styleGuideSaving ? 'Saving…' : 'Save Changes'}
+                        </button>
+                      )}
+                      {!styleGuideDirty && selectedSeries.styleGuide?.artStyle && (
+                        <span className="text-xs text-emerald-600 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">check_circle</span>
+                          Saved
+                        </span>
                       )}
                     </div>
-                  ) : (
                     <StyleGuide
-                      styleGuide={selectedSeries.styleGuide || {}}
-                      onChange={(sg) => handleStyleGuideChange(selectedSeries, sg)}
+                      styleGuide={localStyleGuide}
+                      onChange={(sg) => {
+                        setLocalStyleGuide(sg);
+                        setStyleGuideDirty(true);
+                      }}
                     />
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* Research Hub Tab */}
+                {activeTab === 'research' && (
+                  <SeriesResearchHub 
+                    seriesData={selectedSeries} 
+                    onUpdate={(updatedData) => {
+                      setSelectedSeries(updatedData);
+                      loadData();
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>

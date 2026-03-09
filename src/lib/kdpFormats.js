@@ -120,9 +120,11 @@ export const KDP_TRIM_SIZES = {
 // ============================================================
 
 export const BOOK_TYPES = {
+  // ── Children's ──────────────────────────────────────────
   'picture-book': {
     label: 'Picture Book',
     icon: 'auto_stories',
+    category: 'children',
     description: 'Full-color illustrations on every page (ages 2–6)',
     recommendedSizes: ['8.5x8.5', '8x10', '10x8'],
     recommendedPages: [24, 28, 32, 36, 40],
@@ -134,6 +136,7 @@ export const BOOK_TYPES = {
   'early-reader': {
     label: 'Early Reader',
     icon: 'menu_book',
+    category: 'children',
     description: 'Simple text with illustrations (ages 5–8)',
     recommendedSizes: ['6x9', '5.5x8.5', '8x10'],
     recommendedPages: [32, 48, 64],
@@ -145,6 +148,7 @@ export const BOOK_TYPES = {
   'chapter-book': {
     label: 'Chapter Book',
     icon: 'book',
+    category: 'children',
     description: 'Longer stories with some illustrations (ages 7–12)',
     recommendedSizes: ['5.5x8.5', '6x9', '5x8'],
     recommendedPages: [64, 80, 96, 128],
@@ -156,6 +160,7 @@ export const BOOK_TYPES = {
   'activity-book': {
     label: 'Activity / Coloring Book',
     icon: 'palette',
+    category: 'children',
     description: 'Interactive pages — mazes, puzzles, coloring (ages 3–10)',
     recommendedSizes: ['8.5x11', '8.5x8.5', '8x10'],
     recommendedPages: [48, 64, 80, 100],
@@ -167,6 +172,7 @@ export const BOOK_TYPES = {
   'educational': {
     label: 'Educational / Non-Fiction',
     icon: 'school',
+    category: 'children',
     description: 'Learning-focused with facts and illustrations (ages 4–10)',
     recommendedSizes: ['8.5x11', '8x10', '7x10'],
     recommendedPages: [32, 48, 64],
@@ -174,6 +180,124 @@ export const BOOK_TYPES = {
     priceRange: '$9.99 – $16.99',
     wordsPerPage: '30-80',
     totalWordRange: '1000-5000',
+  },
+
+  // ── Comic ────────────────────────────────────────────────
+  'comic-book': {
+    label: 'Comic Book',
+    icon: 'comic_bubble',
+    category: 'comic',
+    description: 'Sequential art with panels, speech bubbles, and page layouts',
+    recommendedSizes: ['6.625x10.25', '6x9', '8.5x11'],
+    recommendedPages: [24, 32, 48, 64],
+    interiorType: 'premium-color',
+    priceRange: '$9.99 – $19.99',
+    wordsPerPage: '20-80',
+    totalWordRange: '500-3000',
+  },
+  'graphic-novel': {
+    label: 'Graphic Novel',
+    icon: 'auto_stories',
+    category: 'comic',
+    description: 'Long-form comic storytelling, standalone complete narrative',
+    recommendedSizes: ['6x9', '6.625x10.25', '8x10'],
+    recommendedPages: [80, 100, 128, 160, 200],
+    interiorType: 'premium-color',
+    priceRange: '$14.99 – $24.99',
+    wordsPerPage: '20-100',
+    totalWordRange: '2000-8000',
+  },
+  'manga': {
+    label: 'Manga',
+    icon: 'import_contacts',
+    category: 'comic',
+    description: 'Japanese-style comic with right-to-left reading and manga art',
+    recommendedSizes: ['5x7.5', '5.5x8.5', '6x9'],
+    recommendedPages: [180, 200, 220],
+    interiorType: 'black-white',
+    priceRange: '$9.99 – $14.99',
+    wordsPerPage: '20-60',
+    totalWordRange: '2000-6000',
+  },
+
+  // ── Fiction ──────────────────────────────────────────────
+  'fiction-novel': {
+    label: 'Fiction Novel',
+    icon: 'menu_book',
+    category: 'fiction',
+    description: 'Full-length storytelling — thriller, romance, sci-fi, fantasy',
+    recommendedSizes: ['5x8', '5.5x8.5', '6x9'],
+    recommendedPages: [200, 250, 300, 350, 400],
+    interiorType: 'black-white',
+    priceRange: '$9.99 – $16.99',
+    wordsPerPage: '250-350',
+    totalWordRange: '50000-100000',
+  },
+  'novella': {
+    label: 'Novella',
+    icon: 'book',
+    category: 'fiction',
+    description: 'Mid-length fiction, longer than a short story',
+    recommendedSizes: ['5x8', '5.5x8.5', '6x9'],
+    recommendedPages: [80, 100, 128, 160],
+    interiorType: 'black-white',
+    priceRange: '$7.99 – $12.99',
+    wordsPerPage: '250-350',
+    totalWordRange: '20000-50000',
+  },
+  'short-story': {
+    label: 'Short Story Collection',
+    icon: 'description',
+    category: 'fiction',
+    description: 'Collection of short fiction pieces',
+    recommendedSizes: ['5x8', '5.5x8.5', '6x9'],
+    recommendedPages: [80, 100, 128],
+    interiorType: 'black-white',
+    priceRange: '$8.99 – $13.99',
+    wordsPerPage: '250-350',
+    totalWordRange: '15000-40000',
+  },
+
+  // ── Christian / Faith ────────────────────────────────────
+  'devotional-book': {
+    label: 'Devotional / Inspirational',
+    icon: 'church',
+    category: 'christian',
+    description: 'Daily devotions, scripture reflections, prayer guides',
+    recommendedSizes: ['5.5x8.5', '6x9', '5x8'],
+    recommendedPages: [90, 120, 150, 180, 366],
+    interiorType: 'black-white',
+    priceRange: '$10.99 – $18.99',
+    wordsPerPage: '200-400',
+    totalWordRange: '20000-60000',
+  },
+
+  // ── Humor ────────────────────────────────────────────────
+  'humor-book': {
+    label: 'Humor / Comedy Book',
+    icon: 'sentiment_very_satisfied',
+    category: 'humor',
+    description: 'Joke books, satire, funny essays, and parody',
+    recommendedSizes: ['5x8', '5.5x8.5', '6x9', '8.5x8.5'],
+    recommendedPages: [80, 100, 128, 160],
+    interiorType: 'black-white',
+    priceRange: '$8.99 – $14.99',
+    wordsPerPage: '50-200',
+    totalWordRange: '5000-25000',
+  },
+
+  // ── Puzzle ───────────────────────────────────────────────
+  'puzzle-book': {
+    label: 'Puzzle Book',
+    icon: 'extension',
+    category: 'puzzle',
+    description: 'Word searches, crosswords, sudoku, mazes, and logic puzzles',
+    recommendedSizes: ['8.5x11', '8.5x8.5', '8x10'],
+    recommendedPages: [80, 100, 120, 150, 200],
+    interiorType: 'black-white',
+    priceRange: '$6.99 – $12.99',
+    wordsPerPage: '5-30',
+    totalWordRange: '500-3000',
   },
 };
 
@@ -204,55 +328,125 @@ export const INTERIOR_TYPES = {
 // ============================================================
 
 export const ART_STYLES = [
+  // ── General / Children's styles ─────────────────────────
   {
     id: 'cartoon',
     label: 'Cartoon',
-    prompt: 'colorful cartoon illustration, bright colors, bold outlines, fun and playful, children\'s book style',
+    prompt: 'colorful cartoon illustration, bright colors, bold outlines, fun and playful style',
     description: 'Bold outlines, bright colors, fun and playful',
+    categories: ['children', 'humor', 'comic'],
   },
   {
     id: 'watercolor',
     label: 'Watercolor',
-    prompt: 'soft watercolor painting, gentle colors, dreamy atmosphere, delicate brushstrokes, children\'s book illustration',
+    prompt: 'soft watercolor painting, gentle colors, dreamy atmosphere, delicate brushstrokes, painterly illustration',
     description: 'Soft, dreamy, gentle watercolor brushstrokes',
+    categories: ['children', 'christian', 'fiction'],
   },
   {
     id: 'digital-art',
     label: 'Digital Art',
-    prompt: 'professional digital illustration, vibrant colors, clean lines, modern children\'s book art style, detailed',
+    prompt: 'professional digital illustration, vibrant colors, clean lines, modern art style, detailed rendering',
     description: 'Clean, modern, vibrant digital illustrations',
+    categories: ['children', 'fiction', 'christian', 'humor', 'puzzle'],
   },
   {
     id: 'flat',
     label: 'Flat Design',
-    prompt: 'flat design illustration, simple shapes, bold colors, minimalist style, geometric, children\'s book art',
+    prompt: 'flat design illustration, simple geometric shapes, bold colors, minimalist style, clean vectors',
     description: 'Simple shapes, bold colors, minimalist',
+    categories: ['children', 'humor', 'puzzle'],
   },
   {
     id: 'pencil-sketch',
     label: 'Pencil Sketch',
-    prompt: 'detailed pencil sketch illustration, hand-drawn look, crosshatch shading, classic storybook style',
+    prompt: 'detailed pencil sketch illustration, hand-drawn look, crosshatch shading, classic storybook style, fine line art',
     description: 'Hand-drawn pencil sketches with shading',
+    categories: ['children', 'fiction', 'christian'],
   },
   {
     id: 'storybook-classic',
     label: 'Classic Storybook',
-    prompt: 'classic storybook illustration, warm golden lighting, rich detailed backgrounds, traditional children\'s book art, nostalgic',
+    prompt: 'classic storybook illustration, warm golden lighting, rich detailed backgrounds, traditional illustrated book art, nostalgic',
     description: 'Traditional storybook with warm, rich details',
+    categories: ['children', 'christian'],
   },
   {
     id: '3d-rendered',
     label: '3D Rendered',
-    prompt: '3D rendered cartoon, Pixar-like, vibrant colors, smooth shading, adorable characters, children\'s animation style',
+    prompt: '3D rendered cartoon, Pixar-like style, vibrant colors, smooth shading, expressive characters, animation quality',
     description: 'Pixar-like 3D cartoon rendering',
+    categories: ['children', 'humor'],
   },
   {
     id: 'collage',
     label: 'Collage / Mixed Media',
-    prompt: 'mixed media collage illustration, paper textures, layered elements, colorful, Eric Carle inspired, children\'s book art',
+    prompt: 'mixed media collage illustration, paper textures, layered elements, colorful, Eric Carle inspired',
     description: 'Paper collage with layered textures',
+    categories: ['children'],
+  },
+
+  // ── Comic styles ─────────────────────────────────────────
+  {
+    id: 'comic-american',
+    label: 'American Comics',
+    prompt: 'contemporary American superhero comic style, bold vibrant colors, dynamic heroic poses, detailed anatomy, cinematic action scenes, modern digital art',
+    description: 'Bold superhero style, vibrant colors, dynamic',
+    categories: ['comic'],
+  },
+  {
+    id: 'manga',
+    label: 'Manga',
+    prompt: 'Japanese manga style, clean precise black linework, screen tone shading, expressive eyes, speed lines, professional manga quality',
+    description: 'Japanese manga, black and white with speed lines',
+    categories: ['comic'],
+  },
+  {
+    id: 'noir-comic',
+    label: 'Noir',
+    prompt: 'film noir comic style, high contrast black and white, deep dramatic shadows, 1940s detective aesthetic, heavy bold inking, moody atmospheric lighting',
+    description: 'High contrast B&W, dramatic shadows, 1940s',
+    categories: ['comic', 'fiction'],
+  },
+  {
+    id: 'vintage-comic',
+    label: 'Vintage / Golden Age',
+    prompt: 'Golden Age 1950s comic style, visible halftone Ben-Day dots, limited retro color palette, classic adventure aesthetic, bold outlines',
+    description: 'Retro 1950s style with halftone dots',
+    categories: ['comic'],
+  },
+  {
+    id: 'graphic-novel-ink',
+    label: 'Graphic Novel Ink',
+    prompt: 'European BD graphic novel style, detailed pen and ink illustration, sophisticated storytelling aesthetic, semi-realistic characters, rich detailed environments',
+    description: 'Detailed ink illustration, European graphic novel',
+    categories: ['comic', 'fiction'],
+  },
+
+  // ── Fiction / Prose styles ────────────────────────────────
+  {
+    id: 'chapter-illustration',
+    label: 'Chapter Illustration',
+    prompt: 'atmospheric literary chapter illustration, decorative vignette style, evocative mood, classic novel illustration, detailed pen work',
+    description: 'Classic literary illustration for chapter openers',
+    categories: ['fiction', 'christian', 'humor'],
+  },
+  {
+    id: 'no-images',
+    label: 'Text Only (No Images)',
+    prompt: '',
+    description: 'Pure text — no illustrations generated',
+    categories: ['fiction', 'christian', 'humor', 'puzzle'],
+    textOnly: true,
   },
 ];
+
+/**
+ * Get art styles filtered by book category
+ */
+export function getArtStylesForCategory(categoryId) {
+  return ART_STYLES.filter(s => !s.categories || s.categories.includes(categoryId));
+}
 
 // ============================================================
 // Pricing Calculator

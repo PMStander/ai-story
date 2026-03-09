@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:agent": "npm run build --prefix agent && node agent/dist/server.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -13,7 +14,9 @@
     "@google/genai": "^1.44.0",
     "@google/generative-ai": "^0.24.1",
     "@tailwindcss/vite": "^4.2.1",
+    "crossword-layout-generator": "^0.1.1",
     "firebase": "^12.10.0",
+    "framer-motion": "^12.35.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",

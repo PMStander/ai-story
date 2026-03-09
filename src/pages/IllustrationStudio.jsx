@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useGemini } from "../contexts/GeminiContext";
-import { getUserProjects, getProject, getAssets, createAsset, getCharacters, duplicateAsset } from "../lib/firestore";
+import { getUserProjects, getProject, getAssets, createAsset, getCharacters, duplicateAsset, moveAsset, getUserSeries, getSeries, createSeriesAsset, getSeriesAssets, moveProjectAssetToSeries } from "../lib/firestore";
 import { generateImage, editImageWithReference, buildStylePrompt } from "../lib/gemini";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { storage } from "../lib/firebase";
@@ -33,6 +33,35 @@ const STYLES = [
 ];
 
 const RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
+
+const POSES = [
+  { id: 'standing',  label: 'Standing',  icon: '🧍' },
+  { id: 'running',   label: 'Running',   icon: '🏃' },
+  { id: 'sitting',   label: 'Sitting',   icon: '🪑' },
+  { id: 'jumping',   label: 'Jumping',   icon: '🤸' },
+  { id: 'waving',    label: 'Waving',    icon: '👋' },
+  { id: 'reading',   label: 'Reading',   icon: '📖' },
+  { id: 'sleeping',  label: 'Sleeping',  icon: '😴' },
+  { id: 'praying',   label: 'Praying',   icon: '🙏' },
+  { id: 'kneeling',  label: 'Kneeling',  icon: '🧎' },
+  { id: 'fighting',  label: 'Fighting',  icon: '⚔️' },
+  { id: 'celebrating', label: 'Celebrating', icon: '🎉' },
+  { id: 'crying',    label: 'Crying',    icon: '😢' },
+];
+
+const PROPS = [
+  'sword', 'shield', 'crown', 'harp', 'staff', 'scroll',
+  'flower bouquet', 'lantern', 'book', 'basket', 'lamb',
+  'torch', 'bow & arrow', 'cloak', 'treasure chest',
+  'candle', 'slingshot', 'golden coin bag', 'dove',
+];
+
+const SKIN_TONES = [
+  { id: 'light', label: 'Light', hex: '#FDDBB4' },
+  { id: 'medium', label: 'Medium', hex: '#C68642' },
+  { id: 'olive', label: 'Olive', hex: '#8D5524' },
+  { id: 'dark', label: 'Dark', hex: '#4A2912' },
+];
 
 const TYPE_COLORS = {
   cover:        "bg-amber-500 text-white",
@@ -97,6 +126,16 @@ export default function IllustrationStudio() {
   const [ratio, setRatio] = useState("1:1");
   const [styleGuideActive, setStyleGuideActive] = useState(false);
 
+  // Character builder state
+  const [seriesList, setSeriesList] = useState([]);
+  const [selectedSeriesId, setSelectedSeriesId] = useState("");
+  const [selectedSeriesData, setSelectedSeriesData] = useState(null);
+  const [selectedStyleCharacter, setSelectedStyleCharacter] = useState(null); // from series style guide
+  const [selectedPose, setSelectedPose] = useState([]);
+  const [selectedProps, setSelectedProps] = useState([]);
+  const [transparentBg, setTransparentBg] = useState(true);
+  const [charNotes, setCharNotes] = useState("");
+
   // Reference image + edit mode
   const [referenceImage, setReferenceImage] = useState(null); // { url, base64, name }
   const [editMode, setEditMode] = useState("default");
@@ -106,13 +145,16 @@ export default function IllustrationStudio() {
   // UI state
   const [generating, setGenerating] = useState(false);
   const [gallery, setGallery] = useState([]);
+  const [seriesGallery, setSeriesGallery] = useState([]); // series-level character assets
   const [error, setError] = useState("");
+  const [movingAssetId, setMovingAssetId] = useState(null);
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!user) return;
     getUserProjects(user.uid).then(setProjects);
+    getUserSeries(user.uid).then(setSeriesList);
   }, [user]);
 
   useEffect(() => {
@@ -126,12 +168,64 @@ export default function IllustrationStudio() {
 
   useEffect(() => {
     if (assetType !== "illustration") setSelectedCharacterId("");
+    if (assetType !== "character") {
+      setSelectedStyleCharacter(null);
+      setSelectedPose([]);
+      setSelectedProps([]);
+      setCharNotes("");
+    }
   }, [assetType]);
+
+  // Load series data when series is selected in character builder
+  useEffect(() => {
+    if (!user || !selectedSeriesId) { setSelectedSeriesData(null); setSelectedStyleCharacter(null); setSeriesGallery([]); return; }
+    getSeries(user.uid, selectedSeriesId).then((s) => {
+      setSelectedSeriesData(s);
+      setSelectedStyleCharacter(null);
+      if (s?.styleGuide?.artStyle) setStyle(s.styleGuide.artStyle);
+    });
+    getSeriesAssets(user.uid, selectedSeriesId).then(setSeriesGallery);
+  }, [user, selectedSeriesId]);
 
   useEffect(() => {
     if (!user || !selectedProject) { setGallery([]); return; }
     getAssets(user.uid, selectedProject).then(setGallery);
   }, [user, selectedProject]);
+
+  // ── Auto-assembled character prompt ──────────────────────────────────────────
+
+  const buildCharacterPrompt = (pose = "") => {
+    if (!selectedStyleCharacter) return "";
+    const parts = [];
+    const sg = selectedSeriesData?.styleGuide;
+    // Art style
+    if (sg?.artStyle) parts.push(`Art style: ${sg.artStyle}.`);
+    // Color palette
+    if (sg?.colorPalette) parts.push(`Color palette: ${sg.colorPalette}.`);
+    // Character description
+    parts.push(`Character: ${selectedStyleCharacter.name} — ${selectedStyleCharacter.visualDescription}.`);
+    // Pose
+    if (pose) parts.push(`Pose: ${pose}.`);
+    // Props
+    if (selectedProps.length > 0) parts.push(`Holding/accompanied by: ${selectedProps.join(", ")}.`);
+    // Series additional rules (e.g. "no text", "rounded shapes")
+    if (sg?.additionalRules) parts.push(`Style rules: ${sg.additionalRules}.`);
+    // User notes
+    if (charNotes.trim()) parts.push(charNotes.trim() + ".");
+    // Background & framing
+    parts.push(
+      `Full body visible, no cropping. Isolated character on a ${
+        transparentBg ? "transparent" : "plain white"
+      } background. Children's book illustration style, consistent and expressive.`
+    );
+    return parts.join(" ");
+  };
+
+
+  // Preview prompt — show for first selected pose (or no pose)
+  const charPrompt = assetType === "character"
+    ? buildCharacterPrompt(selectedPose[0] ?? "")
+    : "";
 
   // ── Drag & drop ──────────────────────────────────────────────────────────────
 
@@ -175,6 +269,38 @@ export default function IllustrationStudio() {
     setGallery(updated);
   };
 
+  const handleMoveToSeries = async (asset, seriesId) => {
+    if (!seriesId || !selectedProject) return;
+    setMovingAssetId(asset.id);
+    try {
+      await moveProjectAssetToSeries(user.uid, selectedProject, seriesId, asset);
+      // Refresh both galleries
+      const [updated, seriesUpdated] = await Promise.all([
+        getAssets(user.uid, selectedProject),
+        getSeriesAssets(user.uid, seriesId),
+      ]);
+      setGallery(updated);
+      if (seriesId === selectedSeriesId) setSeriesGallery(seriesUpdated);
+    } finally {
+      setMovingAssetId(null);
+    }
+  };
+
+  const handleMove = async (asset, toProjectId) => {
+
+    if (!toProjectId || toProjectId === selectedProject) return;
+    setMovingAssetId(asset.id);
+    try {
+      await moveAsset(user.uid, selectedProject, toProjectId, asset);
+      const updated = await getAssets(user.uid, selectedProject);
+      setGallery(updated);
+    } finally {
+      setMovingAssetId(null);
+    }
+  };
+
+
+
   // ── Derived state ─────────────────────────────────────────────────────────────
 
   const hasStyleGuide = projectData?.styleGuide?.artStyle;
@@ -187,15 +313,55 @@ export default function IllustrationStudio() {
   // ── Generate ──────────────────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
-    if (!hasApiKey || !prompt.trim()) return;
+    const posesToRun = assetType === "character" && selectedPose.length > 0
+      ? selectedPose
+      : assetType === "character" ? [""] : null; // null = non-character flow
+
+    const firstPrompt = assetType === "character"
+      ? buildCharacterPrompt(posesToRun[0] ?? "")
+      : effectivePrompt;
+    if (!hasApiKey || (!firstPrompt.trim() && !referenceImage)) return;
+
     setGenerating(true);
     setError("");
     try {
-      const effectiveRatio = assetType === "cover" ? "3:4" : ratio;
+      const effectiveRatio = (assetType === "cover") ? "3:4" : (assetType === "character" ? "1:1" : ratio);
       const effectiveStyle = assetType === "cover"
         ? "professional children's book cover illustration, vibrant, eye-catching"
         : style;
 
+      // Character mode: generate one image per selected pose → saved to SERIES
+      if (assetType === "character" && posesToRun) {
+        const storageBase = `users/${user.uid}/series/${selectedSeriesId}`;
+        for (const pose of posesToRun) {
+          const posePrompt = buildCharacterPrompt(pose);
+          const dataUrl = await generateImage(apiKey, posePrompt, { style: effectiveStyle, aspectRatio: effectiveRatio });
+          const charName = selectedStyleCharacter?.name ?? null;
+          const poseLabel = pose ? `_${pose}` : "";
+          const filename = `character_${Date.now()}${poseLabel}.png`;
+          const storageRef = ref(storage, `${storageBase}/${filename}`);
+          await uploadString(storageRef, dataUrl, "data_url");
+          const downloadUrl = await getDownloadURL(storageRef);
+          await createSeriesAsset(user.uid, selectedSeriesId, {
+            name: `${charName ?? "Character"}${pose ? ` — ${pose}` : ""}`,
+            type: "character",
+            url: downloadUrl,
+            storagePath: storageRef.fullPath,
+            prompt: posePrompt,
+            style: effectiveStyle,
+            characterName: charName,
+            pose: pose || null,
+          });
+        }
+        // Refresh series gallery
+        const updated = await getSeriesAssets(user.uid, selectedSeriesId);
+        setSeriesGallery(updated);
+        return;
+      }
+
+
+      // Illustration / cover flow
+      const activePrompt = effectivePrompt;
       let dataUrl;
       if (referenceImage) {
         // Lazily resolve base64 if we only have a URL (gallery pick case)
@@ -203,10 +369,15 @@ export default function IllustrationStudio() {
         if (!refBase64) {
           refBase64 = await urlToBase64(referenceImage.url);
         }
-        dataUrl = await editImageWithReference(apiKey, refBase64, effectivePrompt, editMode, { aspectRatio: effectiveRatio });
+        dataUrl = await editImageWithReference(apiKey, refBase64, activePrompt, editMode, { aspectRatio: effectiveRatio });
       } else {
-        dataUrl = await generateImage(apiKey, effectivePrompt, { style: effectiveStyle, aspectRatio: effectiveRatio });
+        dataUrl = await generateImage(apiKey, activePrompt, { style: effectiveStyle, aspectRatio: effectiveRatio });
       }
+
+      const charName = assetType === "character" && selectedStyleCharacter
+        ? selectedStyleCharacter.name
+        : selectedCharacter?.name || null;
+      const charId = assetType === "character" ? null : selectedCharacter?.id || null;
 
       if (selectedProject) {
         const filename = `${assetType}_${Date.now()}.png`;
@@ -214,19 +385,19 @@ export default function IllustrationStudio() {
         await uploadString(storageRef, dataUrl, "data_url");
         const downloadUrl = await getDownloadURL(storageRef);
         await createAsset(user.uid, selectedProject, {
-          name: prompt.slice(0, 50),
+          name: (assetType === "character" && selectedStyleCharacter ? selectedStyleCharacter.name : prompt).slice(0, 50),
           type: assetType,
           url: downloadUrl,
           storagePath: storageRef.fullPath,
-          prompt: effectivePrompt,
+          prompt: activePrompt,
           style: effectiveStyle,
-          characterId:   selectedCharacter?.id   || null,
-          characterName: selectedCharacter?.name || null,
+          characterId:   charId,
+          characterName: charName,
         });
         const updated = await getAssets(user.uid, selectedProject);
         setGallery(updated);
       } else {
-        setGallery((prev) => [{ id: Date.now().toString(), url: dataUrl, prompt: effectivePrompt, style, type: assetType, createdAt: new Date() }, ...prev]);
+        setGallery((prev) => [{ id: Date.now().toString(), url: dataUrl, prompt: activePrompt, style, type: assetType, createdAt: new Date() }, ...prev]);
       }
     } catch (err) {
       setError(err.message || "Image generation failed.");
@@ -385,7 +556,7 @@ export default function IllustrationStudio() {
             </div>
           )}
 
-          {/* Character Selector */}
+          {/* Character Selector (illustration mode) */}
           {assetType === "illustration" && characters.length > 0 && (
             <div className="bg-white rounded-xl border border-primary/10 p-5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 block">Feature Character</label>
@@ -406,8 +577,203 @@ export default function IllustrationStudio() {
             </div>
           )}
 
-          {/* Style picker */}
-          {assetType !== "cover" && (
+          {/* ── Character Builder (character mode) ───────────────────────────── */}
+          {assetType === "character" && (
+            <div className="space-y-4">
+
+              {/* 1. Series selector */}
+              <div className="bg-white rounded-xl border border-purple-200 p-5">
+                <label className="text-xs font-bold uppercase tracking-wider text-purple-500 mb-2 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">library_books</span>
+                  Series
+                </label>
+                <select
+                  value={selectedSeriesId}
+                  onChange={(e) => setSelectedSeriesId(e.target.value)}
+                  className="w-full rounded-xl border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:ring-purple-400 focus:border-purple-400"
+                >
+                  <option value="">Select a series…</option>
+                  {seriesList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
+              {/* 2. Character cards from style guide */}
+              {selectedSeriesData && (
+                <div className="bg-white rounded-xl border border-purple-200 p-5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-purple-500 mb-3 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">person</span>
+                    Character
+                  </label>
+                  {(selectedSeriesData.styleGuide?.characters || []).length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No characters in this series yet. Add them via the Series Manager.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(selectedSeriesData.styleGuide?.characters || []).map((char, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setSelectedStyleCharacter(
+                            selectedStyleCharacter?.name === char.name ? null : char
+                          )}
+                          className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+                            selectedStyleCharacter?.name === char.name
+                              ? "border-purple-500 bg-purple-50 shadow-md"
+                              : "border-slate-200 hover:border-purple-300 bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
+                              selectedStyleCharacter?.name === char.name ? "bg-purple-500" : "bg-slate-200"
+                            }`}>
+                              <span className={`material-symbols-outlined text-sm ${
+                                selectedStyleCharacter?.name === char.name ? "text-white" : "text-slate-500"
+                              }`}>person</span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-700">{char.name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{char.visualDescription?.slice(0, 60)}…</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Pose picker */}
+              {selectedStyleCharacter && (
+                <div className="bg-white rounded-xl border border-purple-200 p-5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-purple-500 mb-3 block">
+                    Pose
+                    {selectedPose.length > 1 && (
+                      <span className="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px]">
+                        {selectedPose.length} poses → {selectedPose.length} images
+                      </span>
+                    )}
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {POSES.map((pose) => (
+                      <button
+                        key={pose.id}
+                        onClick={() => setSelectedPose((prev) =>
+                          prev.includes(pose.id)
+                            ? prev.filter((p) => p !== pose.id)
+                            : [...prev, pose.id]
+                        )}
+                        className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg text-[10px] font-bold transition-all ${
+                          selectedPose.includes(pose.id)
+                            ? "bg-purple-500 text-white shadow-md ring-2 ring-purple-300"
+                            : "bg-slate-50 text-slate-500 border border-slate-200 hover:border-purple-300"
+                        }`}
+                      >
+                        <span className="text-lg leading-none">{pose.icon}</span>
+                        {pose.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Props */}
+              {selectedStyleCharacter && (
+                <div className="bg-white rounded-xl border border-purple-200 p-5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-purple-500 mb-3 block">Props / Items</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PROPS.map((prop) => (
+                      <button
+                        key={prop}
+                        onClick={() => setSelectedProps((prev) =>
+                          prev.includes(prop) ? prev.filter((p) => p !== prop) : [...prev, prop]
+                        )}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+                          selectedProps.includes(prop)
+                            ? "bg-purple-500 text-white shadow"
+                            : "bg-slate-100 text-slate-500 hover:bg-purple-100 hover:text-purple-700"
+                        }`}
+                      >
+                        {prop}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Transparent bg + extra notes + generate */}
+              {selectedStyleCharacter && (
+                <div className="bg-white rounded-xl border border-purple-200 p-5 space-y-4">
+                  {/* Transparent BG */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-slate-700">Transparent Background</p>
+                      <p className="text-[10px] text-slate-400">Ideal for reusing in illustrations &amp; layouts</p>
+                    </div>
+                    <button
+                      onClick={() => setTransparentBg((v) => !v)}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${
+                        transparentBg ? "bg-purple-500" : "bg-slate-200"
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 size-5 bg-white rounded-full shadow transition-all ${
+                        transparentBg ? "left-[22px]" : "left-0.5"
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Extra notes */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Additional Notes</label>
+                    <textarea
+                      value={charNotes}
+                      onChange={(e) => setCharNotes(e.target.value)}
+                      className="w-full rounded-xl border-slate-200 bg-slate-50 px-3 py-2 text-xs resize-none min-h-[56px] focus:ring-purple-400 focus:border-purple-400"
+                      placeholder="e.g. smiling warmly, golden sunset lighting, showing kindness…"
+                    />
+                  </div>
+
+                  {/* Auto-assembled prompt preview */}
+                  {charPrompt && (
+                    <div className="p-3 bg-purple-50 border border-purple-100 rounded-lg">
+                      <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wide mb-1">Auto-assembled prompt</p>
+                      <p className="text-[10px] text-purple-600 line-clamp-4 leading-relaxed">{charPrompt}</p>
+                    </div>
+                  )}
+
+                  {/* Generate button */}
+                  <button
+                    onClick={handleGenerate}
+                    disabled={generating || !hasApiKey || !charPrompt}
+                    className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold text-sm hover:bg-purple-700 disabled:opacity-40 shadow-lg shadow-purple-200 flex items-center justify-center gap-2"
+                  >
+                    {generating ? (
+                      <><div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generating…</>
+                    ) : selectedPose.length > 1 ? (
+                      <><span className="material-symbols-outlined">auto_awesome</span> Generate {selectedPose.length} Poses</>
+                    ) : (
+                      <><span className="material-symbols-outlined">person_add</span> Generate Character</>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Prompt to select something */}
+              {!selectedStyleCharacter && selectedSeriesData && (
+                <div className="flex flex-col items-center text-center py-6 px-4 bg-purple-50 rounded-xl border border-purple-100">
+                  <span className="material-symbols-outlined text-4xl text-purple-300 mb-2">touch_app</span>
+                  <p className="text-xs text-purple-500 font-medium">Select a character above to begin building</p>
+                </div>
+              )}
+
+              {!selectedSeriesId && (
+                <div className="flex flex-col items-center text-center py-6 px-4 bg-purple-50 rounded-xl border border-purple-100">
+                  <span className="material-symbols-outlined text-4xl text-purple-300 mb-2">library_books</span>
+                  <p className="text-xs text-purple-500 font-medium">Select a series to load its characters</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Style picker (non-character) */}
+          {assetType !== "cover" && assetType !== "character" && (
             <div className="bg-white rounded-xl border border-primary/10 p-5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Art Style</label>
               {styleGuideActive && hasStyleGuide ? (
@@ -428,8 +794,8 @@ export default function IllustrationStudio() {
             </div>
           )}
 
-          {/* Aspect Ratio */}
-          {assetType !== "cover" && (
+          {/* Aspect Ratio (non-character, non-cover) */}
+          {assetType !== "cover" && assetType !== "character" && (
             <div className="bg-white rounded-xl border border-primary/10 p-5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Aspect Ratio</label>
               <div className="flex gap-2 flex-wrap">
@@ -443,47 +809,46 @@ export default function IllustrationStudio() {
             </div>
           )}
 
-          {/* Prompt + Generate */}
-          <div className="bg-white rounded-xl border border-primary/10 p-5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">
-              {referenceImage ? "What to change" : assetType === "character" ? "Character Description" : assetType === "cover" ? "Cover Scene" : "Scene / Prompt"}
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="w-full rounded-xl border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:ring-primary focus:border-primary min-h-[90px] resize-none"
-              placeholder={
-                referenceImage
-                  ? EDIT_MODES.find(m => m.key === editMode)?.tip || "Describe the edit…"
-                  : assetType === "character"
-                  ? "A small fox with bright orange fur, wearing a blue explorer hat…"
-                  : assetType === "cover"
-                  ? "A brave girl standing at the edge of an enchanted forest at dusk…"
-                  : "A brave little dragon sharing toys with friends in a magical forest…"
-              }
-            />
+          {/* Prompt + Generate (non-character) */}
+          {assetType !== "character" && (
+            <div className="bg-white rounded-xl border border-primary/10 p-5">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">
+                {referenceImage ? "What to change" : assetType === "cover" ? "Cover Scene" : "Scene / Prompt"}
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="w-full rounded-xl border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:ring-primary focus:border-primary min-h-[90px] resize-none"
+                placeholder={
+                  referenceImage
+                    ? EDIT_MODES.find(m => m.key === editMode)?.tip || "Describe the edit…"
+                    : assetType === "cover"
+                    ? "A brave girl standing at the edge of an enchanted forest at dusk…"
+                    : "A brave little dragon sharing toys with friends in a magical forest…"
+                }
+              />
 
-            {/* Effective prompt preview */}
-            {((styleGuideActive && hasStyleGuide) || selectedCharacter) && (
-              <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Effective prompt</p>
-                <p className="text-[11px] text-slate-600 line-clamp-4">{effectivePrompt || <span className="italic text-slate-400">Type a prompt above…</span>}</p>
-              </div>
-            )}
-
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !hasApiKey || !prompt.trim()}
-              className="w-full mt-4 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 disabled:opacity-50 shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-            >
-              {generating ? (
-                <><div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {referenceImage ? "Editing…" : "Generating…"}</>
-              ) : (
-                <><span className="material-symbols-outlined">{referenceImage ? "auto_fix_high" : "auto_awesome"}</span>
-                  {referenceImage ? `Edit Image` : `Generate ${ASSET_TYPES.find(t => t.key === assetType)?.label}`}</>
+              {((styleGuideActive && hasStyleGuide) || selectedCharacter) && (
+                <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Effective prompt</p>
+                  <p className="text-[11px] text-slate-600 line-clamp-4">{effectivePrompt || <span className="italic text-slate-400">Type a prompt above…</span>}</p>
+                </div>
               )}
-            </button>
-          </div>
+
+              <button
+                onClick={handleGenerate}
+                disabled={generating || !hasApiKey || !prompt.trim()}
+                className="w-full mt-4 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 disabled:opacity-50 shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              >
+                {generating ? (
+                  <><div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {referenceImage ? "Editing…" : "Generating…"}</>
+                ) : (
+                  <><span className="material-symbols-outlined">{referenceImage ? "auto_fix_high" : "auto_awesome"}</span>
+                    {referenceImage ? `Edit Image` : `Generate ${ASSET_TYPES.find(t => t.key === assetType)?.label}`}</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Gallery ──────────────────────────────────────────────────────── */}
@@ -504,12 +869,63 @@ export default function IllustrationStudio() {
           )}
 
           <div className="bg-white rounded-xl border border-primary/10 p-6">
-            <h3 className="font-bold mb-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary">photo_library</span>
-              Gallery ({gallery.length})
-            </h3>
 
-            {gallery.length === 0 ? (
+            {/* Gallery heading: series or project */}
+            {assetType === "character" && selectedSeriesId ? (
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-purple-500">library_books</span>
+                Series Character Library ({seriesGallery.length})
+                <span className="ml-auto text-[10px] text-slate-400 font-normal">Shared across all books in this series</span>
+              </h3>
+            ) : (
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">photo_library</span>
+                Gallery ({gallery.length})
+              </h3>
+            )}
+
+            {/* Series character gallery */}
+            {assetType === "character" && selectedSeriesId ? (
+              seriesGallery.length === 0 ? (
+                <div className="text-center py-16">
+                  <span className="material-symbols-outlined text-6xl text-slate-300 mb-4">person_add</span>
+                  <p className="text-slate-500 mb-1">No character assets yet.</p>
+                  <p className="text-sm text-slate-400">Generate characters above to build your series library.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {seriesGallery.map((asset) => (
+                    <div key={asset.id} className="group rounded-xl overflow-hidden border border-slate-100 hover:shadow-md transition-all">
+                      <div className="aspect-square bg-slate-100 relative">
+                        <img src={asset.url} alt={asset.name || "character"} className="w-full h-full object-cover" />
+                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500 text-white capitalize">
+                          {asset.pose || "character"}
+                        </span>
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-end justify-center opacity-0 group-hover:opacity-100 pb-3">
+                          <div className="flex gap-1.5">
+                            <a href={asset.url} target="_blank" rel="noreferrer"
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg text-[10px] font-bold shadow hover:scale-105 transition-transform">
+                              <span className="material-symbols-outlined text-xs">open_in_new</span>Open
+                            </a>
+                            <button
+                              onClick={() => handleUseFromGallery(asset)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-primary text-white rounded-lg text-[10px] font-bold shadow hover:scale-105 transition-transform">
+                              <span className="material-symbols-outlined text-xs">edit</span>Use as ref
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs font-semibold text-slate-700 truncate">{asset.name}</p>
+                        {asset.characterName && (
+                          <span className="text-[10px] text-purple-600 font-medium">{asset.characterName}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : gallery.length === 0 ? (
               <div className="text-center py-16">
                 <span className="material-symbols-outlined text-6xl text-slate-300 mb-4">image</span>
                 <p className="text-slate-500 mb-1">No assets yet.</p>
@@ -521,6 +937,7 @@ export default function IllustrationStudio() {
                   <div
                     key={asset.id}
                     onClick={() => pickingFromGallery && handleUseFromGallery(asset)}
+
                     className={`group rounded-xl overflow-hidden border transition-all ${
                       pickingFromGallery
                         ? "border-primary cursor-pointer hover:shadow-lg hover:shadow-primary/20 hover:scale-[1.02]"
@@ -537,7 +954,63 @@ export default function IllustrationStudio() {
 
                       {/* Hover overlay — hidden during gallery-pick mode */}
                       {!pickingFromGallery && (
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-end justify-center opacity-0 group-hover:opacity-100 pb-3">
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all flex flex-col items-center justify-end opacity-0 group-hover:opacity-100 pb-3 gap-2 px-2">
+                          {/* Moving spinner */}
+                          {movingAssetId === asset.id && (
+                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10 rounded-xl">
+                              <div className="flex flex-col items-center gap-2">
+                                <div className="size-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                <span className="text-white text-[11px] font-bold">Moving…</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Move to series (character assets) */}
+                          {selectedProject && seriesList.length > 0 && (
+                            <div className="flex items-center gap-1 w-full justify-center">
+                              <span className="material-symbols-outlined text-purple-300 text-sm">library_books</span>
+                              <select
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  if (e.target.value) handleMoveToSeries(asset, e.target.value);
+                                  e.target.value = "";
+                                }}
+                                defaultValue=""
+                                className="flex-1 bg-white/90 text-slate-700 text-[10px] font-bold rounded-lg px-2 py-1 max-w-[160px] focus:outline-none cursor-pointer shadow"
+                              >
+                                <option value="" disabled>Move to series…</option>
+                                {seriesList.map((s) => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Move to project */}
+
+                          {selectedProject && projects.filter(p => p.id !== selectedProject).length > 0 && (
+                            <div className="flex items-center gap-1 w-full justify-center">
+                              <span className="material-symbols-outlined text-white text-sm">drive_file_move</span>
+                              <select
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  if (e.target.value) handleMove(asset, e.target.value);
+                                  e.target.value = "";
+                                }}
+                                defaultValue=""
+                                className="flex-1 bg-white/90 text-slate-700 text-[10px] font-bold rounded-lg px-2 py-1 max-w-[160px] focus:outline-none cursor-pointer shadow"
+                              >
+                                <option value="" disabled>Move to…</option>
+                                {projects
+                                  .filter((p) => p.id !== selectedProject)
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>{p.title}</option>
+                                  ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Bottom row: Open / Use as ref / Copy */}
                           <div className="flex gap-1.5">
                             <a href={asset.url} target="_blank" rel="noreferrer"
                               className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg text-[10px] font-bold shadow hover:scale-105 transition-transform">
@@ -558,6 +1031,7 @@ export default function IllustrationStudio() {
                           </div>
                         </div>
                       )}
+
 
                       {/* Gallery-pick overlay — bold and obvious */}
                       {pickingFromGallery && (

@@ -7,28 +7,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
-      // Settings subcollection (usage tracking, preferences)
-      match /settings/{settingId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Projects subcollection
-      match /projects/{projectId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-
-        // All nested subcollections (chapters, characters, assets, publishing)
-        match /{subcollection}/{docId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-
-          // Nested under subcollections (e.g., illustrations under chapters)
-          match /{nestedCol}/{nestedId} {
-            allow read, write: if request.auth != null && request.auth.uid == userId;
-          }
-        }
-      }
-
-      // Campaigns subcollection (Ads Manager)
-      match /campaigns/{campaignId} {
+      // All nested subcollections (projects, settings, campaigns, series, etc.)
+      match /{allSubcollections=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }

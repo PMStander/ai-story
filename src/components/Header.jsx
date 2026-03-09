@@ -1,11 +1,11 @@
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../contexts/ThemeContext";
 import { useState, useRef, useEffect } from "react";
+import DayNightToggle from "./DayNightToggle";
 
 export default function Header() {
   const { user, signOut } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropRef = useRef(null);
@@ -40,15 +40,7 @@ export default function Header() {
       </div>
       <div className="flex items-center gap-4">
         {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 hover:bg-primary/5 dark:hover:bg-primary/10 rounded-xl transition-colors"
-          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          <span className="material-symbols-outlined text-slate-500 dark:text-slate-300">
-            {isDark ? "light_mode" : "dark_mode"}
-          </span>
-        </button>
+        <DayNightToggle />
 
         <button className="relative p-2 hover:bg-primary/5 rounded-xl transition-colors">
           <span className="material-symbols-outlined text-slate-500 dark:text-slate-300">notifications</span>

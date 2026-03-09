@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useGemini } from "../contexts/GeminiContext";
-import { onProjectsSnapshot, createProject, deleteProject } from "../lib/firestore";
+import { onProjectsSnapshot, createProject, deleteProject, getUserSeries } from "../lib/firestore";
 import { useNavigate } from "react-router-dom";
 import { KDP_TRIM_SIZES, BOOK_TYPES } from "../lib/kdpFormats";
 
@@ -17,6 +17,8 @@ export default function Dashboard() {
   const [newBookType, setNewBookType] = useState("picture-book");
   const [newTrimSize, setNewTrimSize] = useState("8.5x8.5");
   const [newTargetAge, setNewTargetAge] = useState("3-6");
+  const [newSeriesId, setNewSeriesId] = useState("");
+  const [userSeries, setUserSeries] = useState([]);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -25,6 +27,7 @@ export default function Dashboard() {
       setProjects(data);
       setLoading(false);
     });
+    getUserSeries(user.uid).then(setUserSeries).catch(console.error);
     return unsubscribe;
   }, [user]);
 
@@ -40,6 +43,7 @@ export default function Dashboard() {
       trimSize: newTrimSize,
       interiorType: selectedType?.interiorType || "premium-color",
       pageCount: selectedType?.recommendedPages?.[Math.floor(selectedType.recommendedPages.length / 2)] || 32,
+      seriesId: newSeriesId || null,
     });
     setCreating(false);
     setShowNewProject(false);
@@ -201,6 +205,19 @@ export default function Dashboard() {
                     <option value="7-12">7–12 (Chapter Book)</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Link to Series (optional)</label>
+                <select
+                  value={newSeriesId}
+                  onChange={(e) => setNewSeriesId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                >
+                  <option value="">No series (standalone book)</option>
+                  {userSeries.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
